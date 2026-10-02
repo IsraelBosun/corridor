@@ -186,7 +186,7 @@ function messageOf(e: unknown, fallback: string): string {
 }
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const { session, me, member, setDropOff: saveDropOff } = useSession();
+  const { session, me, member, tester, setDropOff: saveDropOff } = useSession();
 
   const [trips, setTrips] = useState<Trip[]>([]);
   const [people, setPeople] = useState<Record<string, Person>>({});
@@ -394,12 +394,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       trips.find(
         (t) =>
           me &&
-          t.driverId !== me.id &&
+          // Testers may hold a seat in their own ride; nobody else can.
+          (tester || t.driverId !== me.id) &&
           t.riders.includes(me.id) &&
           // Once the car has left, the rider still has a ride until it is over.
           (t.status !== 'left' || underway(t))
       ),
-    [trips, me, underway]
+    [trips, me, underway, tester]
   );
 
   /** Run a write, surface its failure, and refetch either way. */

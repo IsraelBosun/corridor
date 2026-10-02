@@ -41,7 +41,8 @@ export default function TripScreen() {
 
   const driver = person(trip.driverId);
   const open = seatsOpen(trip);
-  const iAmDriving = me ? trip.driverId === me.id : false;
+  // A tester in rider mode looking at their own ride sees it as a rider does.
+  const iAmDriving = me ? trip.driverId === me.id && role === 'driver' : false;
   const mine = me ? trip.riders.includes(me.id) : false;
   const present = !!(me && trip.presentAt[me.id]);
   const pickup = landmark(trip.stops[0]);

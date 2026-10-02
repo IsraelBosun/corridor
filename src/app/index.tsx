@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useSession } from '@/data/session';
 import { seatsOpen, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { demoNow, hhmm, untilText } from '@/lib/time';
@@ -59,10 +60,12 @@ type Layout = { topBar: number; collapsed: number; expanded: number; insetTop: n
 function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
   const router = useRouter();
   const { trips, me, landmarks, dropOff, dropOffName, serves, loading, mySeat } = useStore();
+  const { tester } = useSession();
   const now = demoNow();
 
   const open = trips
-    .filter((t) => (t.status === 'posted' || t.status === 'boarding') && t.driverId !== me?.id)
+    // Your own ride is hidden, except for testers, who book it to try both sides.
+    .filter((t) => (t.status === 'posted' || t.status === 'boarding') && (tester || t.driverId !== me?.id))
     .sort((a, b) => a.departMin - b.departMin);
   const passing = dropOff ? open.filter(serves) : open;
   const others = dropOff ? open.filter((t) => !serves(t)) : [];

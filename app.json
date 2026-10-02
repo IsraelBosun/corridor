@@ -1,14 +1,15 @@
 {
   "expo": {
     "name": "Corridor",
-    "slug": "app",
+    "slug": "corridor",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "corridor",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "com.israelbosun.corridor"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.israelbosun.corridor"
     },
     "web": {
       "output": "static",
@@ -54,6 +56,13 @@
     "androidNavigationBar": {
       "barStyle": "dark-content",
       "backgroundColor": "#FFFFFF"
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "94813780-bf80-4edd-ae01-43016907188e"
+      }
+    },
+    "owner": "israelbosun"
   }
 }
