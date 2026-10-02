@@ -1,23 +1,24 @@
 {
   "expo": {
-    "name": "app",
+    "name": "Corridor",
     "slug": "app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "app",
+    "scheme": "corridor",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0E3B43",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "output": "static",
@@ -28,15 +29,31 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#FFFFFF",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 220,
+          "dark": {
+            "backgroundColor": "#0E3B43",
+            "image": "./assets/images/wordmark-light.png"
+          }
         }
-      ]
+      ],
+      "expo-secure-store",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "backgroundColor": "#FFFFFF",
+    "androidStatusBar": {
+      "barStyle": "light-content",
+      "backgroundColor": "#0E3B43",
+      "translucent": true
+    },
+    "androidNavigationBar": {
+      "barStyle": "dark-content",
+      "backgroundColor": "#FFFFFF"
     }
   }
 }
