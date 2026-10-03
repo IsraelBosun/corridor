@@ -219,3 +219,61 @@ export function ClockIcon({ size = 18, tint = color.inkMuted }: IconProps) {
     </Svg>
   );
 }
+
+/** A play button in a ring, for "How Corridor works". */
+export function PlayIcon({ size = 20, tint = color.ink }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="8.5" stroke={tint} strokeWidth="1.9" />
+      <Path d="M10.2 8.8v6.4l5-3.2-5-3.2Z" fill={tint} stroke={tint} strokeWidth="1.2" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** A door with an arrow leaving it. */
+export function SignOutIcon({ size = 20, tint = color.stop }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" stroke={tint} strokeWidth="1.9" strokeLinecap="round" />
+      <Path d="M14 8l4 4-4 4M18 12H9" stroke={tint} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/**
+ * The Route C mark: the drive home drawn as a C, a dashed road down its
+ * middle, ending at your stop. `road` is the C, `ground` shows through the
+ * dashes, `stop` is the dot at the end.
+ */
+export function RouteMark({
+  size = 32,
+  road,
+  ground,
+  stop = '#FFFFFF',
+}: {
+  size?: number;
+  road: string;
+  ground: string;
+  stop?: string;
+}) {
+  // Centre 24,24, radius 14, open on the right between -50 and 50 degrees.
+  const arc = 'M33 13.3 A14 14 0 1 0 33 34.7';
+  return (
+    <Svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+      <Path d={arc} stroke={road} strokeWidth="8.5" strokeLinecap="round" />
+      <Path d={arc} stroke={ground} strokeWidth="1.6" strokeDasharray="3 3" strokeLinecap="round" />
+      <Circle cx="33" cy="34.7" r="3.6" fill={stop} stroke={ground} strokeWidth="1.6" />
+    </Svg>
+  );
+}
+
+/** A crosshair round a dot, for "show where I am". */
+export function LocateIcon({ size = 20, tint = color.ink }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="6.5" stroke={tint} strokeWidth="1.9" />
+      <Circle cx="12" cy="12" r="2.4" fill={tint} />
+      <Path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" stroke={tint} strokeWidth="1.9" strokeLinecap="round" />
+    </Svg>
+  );
+}

@@ -13,7 +13,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0E3B43",
+        "backgroundColor": "#123B2F",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -31,31 +31,43 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FFFFFF",
+          "backgroundColor": "#F5F5F2",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 220,
+          "imageWidth": 200,
           "dark": {
-            "backgroundColor": "#0E3B43",
-            "image": "./assets/images/wordmark-light.png"
+            "backgroundColor": "#123B2F",
+            "image": "./assets/images/splash-icon-dark.png"
           }
         }
       ],
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Corridor shows where you are on your own map. It is never stored or shared."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#123B2F"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "backgroundColor": "#FFFFFF",
+    "backgroundColor": "#F5F5F2",
     "androidStatusBar": {
       "barStyle": "light-content",
-      "backgroundColor": "#0E3B43",
+      "backgroundColor": "#0D1814",
       "translucent": true
     },
     "androidNavigationBar": {
       "barStyle": "dark-content",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#F5F5F2"
     },
     "extra": {
       "router": {},

@@ -77,7 +77,7 @@ export function ScreenHeader({
         style={({ pressed }) => [s.headerButton, pressed && s.pressed]}>
         {icon === 'close' ? <CloseIcon /> : <BackIcon />}
       </Pressable>
-      <Text variant="heading" style={s.flex} numberOfLines={1}>
+      <Text variant="title" style={[s.flex, s.headerTitle]} numberOfLines={1}>
         {title ?? eyebrow ?? ''}
       </Text>
     </View>
@@ -170,7 +170,7 @@ export function Row({
 export function SectionTitle({ children, style }: { children: string; style?: StyleProp<ViewStyle> }) {
   return (
     <View style={[s.section, style]}>
-      <Text variant="eyebrow" tone="muted">
+      <Text variant="kicker" tone="muted">
         {children}
       </Text>
     </View>
@@ -229,8 +229,10 @@ export function Button({
   style?: StyleProp<ViewStyle>;
 }) {
   const spec = {
-    primary: { bg: color.brand, border: color.brand, tone: 'onInk' as const },
-    secondary: { bg: color.brandSoft, border: color.brandSoft, tone: 'brand' as const },
+    // Lime with pine text: the one loud thing on a screen.
+    primary: { bg: color.accent, border: color.accent, tone: 'onAccent' as const },
+    // Outlined in pine, for the action beside the main one.
+    secondary: { bg: 'transparent', border: color.brand, tone: 'brand' as const },
     quiet: { bg: 'transparent', border: 'transparent', tone: 'ink' as const },
     go: { bg: color.go, border: color.go, tone: 'onInk' as const },
     danger: { bg: 'transparent', border: 'transparent', tone: 'stop' as const },
@@ -252,12 +254,17 @@ export function Button({
       <Text variant="heading" tone={spec.tone}>
         {label}
       </Text>
-      {arrow ? <ArrowIcon size={18} tint={spec.tone === 'onInk' ? color.onInk : color.brandInk} /> : null}
+      {arrow ? (
+        <ArrowIcon
+          size={18}
+          tint={spec.tone === 'onAccent' ? color.onAccent : spec.tone === 'onInk' ? color.onInk : color.brandInk}
+        />
+      ) : null}
     </Pressable>
   );
 }
 
-/** Initials in a circle. The only avatar the product has. */
+/** Initials on a rounded square. The only avatar the product has. */
 export function Avatar({
   initials,
   tone = 'person',
@@ -265,7 +272,7 @@ export function Avatar({
 }: {
   initials: string;
   /** "person" gives each colleague their own colour, picked from their initials. */
-  tone?: 'person' | 'sunken' | 'accent' | 'go' | 'ink';
+  tone?: 'person' | 'sunken' | 'accent' | 'go' | 'ink' | 'me';
   size?: number;
 }) {
   const palette = avatarPalette();
@@ -276,6 +283,8 @@ export function Avatar({
     accent: color.accentSoft,
     go: color.goSoft,
     ink: color.brand,
+    // Your own initials: lime, the way the top of every screen shows you.
+    me: color.accent,
   }[tone];
   const ink = {
     person: own.fg,
@@ -283,13 +292,14 @@ export function Avatar({
     accent: color.accentInk,
     go: color.go,
     ink: color.onInk,
+    me: color.onAccent,
   }[tone];
   return (
     <View
-      style={[s.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: bg }]}>
+      style={[s.avatar, { width: size, height: size, borderRadius: Math.round(size * 0.3), backgroundColor: bg }]}>
       <Text
         variant="heading"
-        style={{ color: ink, fontSize: size * 0.36, lineHeight: size * 0.46 }}>
+        style={{ color: ink, fontSize: size * 0.34, lineHeight: size * 0.44, fontWeight: '800' }}>
         {initials}
       </Text>
     </View>
@@ -348,7 +358,10 @@ export function Field({
   );
 }
 
-/** Choice row of equal-width chips. Seats, tolerances, that kind of thing. */
+/**
+ * A segmented control: equal parts on a sunken track, the chosen one lifted
+ * onto a white tile. Seats, tolerances, that kind of thing.
+ */
 export function TileRow<T extends string | number>({
   options,
   value,
@@ -370,8 +383,8 @@ export function TileRow<T extends string | number>({
             onPress={() => onChange(opt)}
             accessibilityRole="radio"
             accessibilityState={{ selected: on }}
-            style={({ pressed }) => [s.tile, on ? s.tileOn : s.tileOff, pressed && s.pressed]}>
-            <Text variant="data" tone={on ? 'onInk' : 'ink'}>
+            style={({ pressed }) => [s.tile, on && s.tileOn, pressed && s.pressed]}>
+            <Text variant="data" tone={on ? 'ink' : 'muted'}>
               {render ? render(opt) : String(opt)}
             </Text>
           </Pressable>
@@ -391,25 +404,24 @@ export const s = themed(() =>
     paddingTop: space.md,
     paddingBottom: space.md,
     backgroundColor: color.bg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color.line,
-    gap: space.xs,
+    gap: space.sm,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.sm,
-    paddingTop: space.sm,
-    paddingBottom: space.md,
-    marginLeft: -space.sm,
+    gap: space.md,
+    paddingTop: space.lg,
+    paddingBottom: space.lg,
   },
   headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: color.sunken,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerTitle: { fontSize: 26, lineHeight: 31 },
   round: {
     backgroundColor: color.surface,
     alignItems: 'center',
@@ -427,14 +439,14 @@ export const s = themed(() =>
   rowIcon: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: radius.md,
     backgroundColor: color.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rowTitle: { fontWeight: '500' },
   rowValue: { maxWidth: '45%' },
-  section: { paddingTop: space.xl, paddingBottom: space.xs },
+  section: { paddingTop: space.xl, paddingBottom: space.sm },
   card: {
     backgroundColor: color.surface,
     borderRadius: radius.xl,
@@ -445,9 +457,9 @@ export const s = themed(() =>
   cardSelected: { borderColor: color.brand, borderWidth: 2, backgroundColor: color.brandSoft },
   pressed: { opacity: 0.6 },
   button: {
-    minHeight: 54,
+    minHeight: 56,
     borderRadius: radius.lg,
-    borderWidth: 1,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -467,15 +479,27 @@ export const s = themed(() =>
   field: { marginBottom: space.xl },
   fieldLabel: { marginBottom: space.sm },
   fieldHint: { marginTop: space.sm },
-  tileRow: { flexDirection: 'row', gap: space.sm },
+  tileRow: {
+    flexDirection: 'row',
+    gap: space.xs,
+    padding: space.xs,
+    borderRadius: radius.lg,
+    backgroundColor: color.sunken,
+  },
   tile: {
     flex: 1,
-    height: 48,
+    height: 44,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tileOn: { backgroundColor: color.brand },
-  tileOff: { backgroundColor: color.surface, borderWidth: 1, borderColor: color.line },
+  tileOn: {
+    backgroundColor: color.surface,
+    shadowColor: color.shadow,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
   })
 );

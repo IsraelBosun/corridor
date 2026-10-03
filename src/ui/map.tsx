@@ -15,8 +15,8 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { MAPBOX_READY, TILE, tileUrl, type LngLat } from '@/lib/mapbox';
-import { color, elevation, MINT, radius, space, TEAL, themed } from '@/theme/tokens';
-import { FrameIcon } from './icons';
+import { currentScheme, elevation, LIME, NIGHT, PINE, radius, space, themed } from '@/theme/tokens';
+import { FrameIcon, LocateIcon } from './icons';
 import { Text } from './text';
 
 /**
@@ -199,6 +199,7 @@ export function MapView({
   padding = NO_PADDING,
   showFrameButton = true,
   controlsBottom = space.md,
+  me,
 }: {
   routes?: MapRoute[];
   markers?: MapMarker[];
@@ -209,6 +210,8 @@ export function MapView({
   showFrameButton?: boolean;
   /** How far up from the map's bottom edge the frame button sits, to clear a sheet. */
   controlsBottom?: number;
+  /** This phone's position, drawn as a live dot. Never part of the framing. */
+  me?: LngLat | null;
 }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [drawn, setDrawn] = useState<Drawn | null>(null);
@@ -297,6 +300,23 @@ export function MapView({
   };
 
   const markMoved = useCallback(() => setMoved(true), []);
+
+  const meUnit = useMemo(() => (me ? toUnit(me.lat, me.lng) : null), [me]);
+
+  /** Centre the camera on this phone, inside the padded area, close enough to see the street. */
+  const showMe = useCallback(() => {
+    if (!meUnit || size.w === 0) return;
+    const nz = Math.max(z.value, 15);
+    const world = TILE * 2 ** nz;
+    const aw = size.w - padding.left - padding.right;
+    const ah = size.h - padding.top - padding.bottom;
+    const offX = padding.left + aw / 2 - size.w / 2;
+    const offY = padding.top + ah / 2 - size.h / 2;
+    flyTo({ cx: meUnit.x - offX / world, cy: meUnit.y - offY / world, z: nz }, true);
+    setMoved(true);
+    // padKey stands in for padding, a new object on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meUnit, size.w, size.h, padKey, flyTo, z]);
 
   // One finger drags, two fingers pinch and drag together, two taps zoom in.
   const pinchX = useSharedValue(0);
@@ -479,9 +499,9 @@ export function MapView({
       for (const r of layerRoutes) {
         if (pass.primaryOnly && r.tone !== 'primary') continue;
         const tone: Seg['tone'] = pass.tone === 'casing' ? 'casing' : r.tone;
-        // Screen pixels: a thin casing under a solid line, muted a bit thinner.
+        // Screen pixels: a wide pine band under a lime line, muted a bit thinner.
         // Kept slim so the route reads without covering the streets under it.
-        const sw = (tone === 'casing' ? 7 : tone === 'primary' ? 4 : 3) * perScreenPx;
+        const sw = (tone === 'casing' ? 14 : tone === 'primary' ? 4 : 3) * perScreenPx;
         for (let i = 0; i < r.pts.length - 1; i++) {
           const ax1 = r.pts[i].x;
           const ay1 = r.pts[i].y;
@@ -561,27 +581,36 @@ export function MapView({
           {unitMarkers.map((m) => (
             <Marker key={m.id} marker={m} cx={cx} cy={cy} z={z} fw={fw} fh={fh} />
           ))}
+
+          {meUnit ? <MeDot x={meUnit.x} y={meUnit.y} cx={cx} cy={cy} z={z} fw={fw} fh={fh} /> : null}
         </View>
       </GestureDetector>
 
-      {showFrameButton && moved ? (
-        <Pressable
-          onPress={() => frameAll(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Show the whole route"
-          style={({ pressed }) => [
-            s.frameButton,
-            // Bottom right corner, whatever the padding; only a sheet lifts it.
-            { bottom: controlsBottom, right: space.md },
-            pressed && s.pressed,
-          ]}>
-          <FrameIcon size={18} />
-        </Pressable>
-      ) : null}
+      {/* Bottom right corner, whatever the padding; only a sheet lifts it. */}
+      <View style={[s.controls, { bottom: controlsBottom, right: space.md }]} pointerEvents="box-none">
+        {meUnit && showFrameButton ? (
+          <Pressable
+            onPress={showMe}
+            accessibilityRole="button"
+            accessibilityLabel="Show where I am"
+            style={({ pressed }) => [s.frameButton, pressed && s.pressed]}>
+            <LocateIcon size={18} tint={CHIP_INK} />
+          </Pressable>
+        ) : null}
+        {showFrameButton && moved ? (
+          <Pressable
+            onPress={() => frameAll(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Show the whole route"
+            style={({ pressed }) => [s.frameButton, pressed && s.pressed]}>
+            <FrameIcon size={18} tint={CHIP_INK} />
+          </Pressable>
+        ) : null}
+      </View>
 
       {trouble ? (
         <View style={[s.trouble, { top: padding.top + space.sm }]} pointerEvents="none">
-          <Text variant="small" tone="muted">
+          <Text variant="small" style={s.troubleText}>
             {trouble}
           </Text>
         </View>
@@ -594,6 +623,56 @@ export function MapView({
         </Text>
       </View>
     </View>
+  );
+}
+
+/**
+ * You, as a blue dot with a soft halo: the convention every map app uses, so
+ * nobody has to learn it. Each new reading glides the dot there over about a
+ * second rather than jumping, which is roughly how often readings come in.
+ */
+function MeDot({
+  x,
+  y,
+  cx,
+  cy,
+  z,
+  fw,
+  fh,
+}: {
+  x: number;
+  y: number;
+  cx: SharedValue<number>;
+  cy: SharedValue<number>;
+  z: SharedValue<number>;
+  fw: SharedValue<number>;
+  fh: SharedValue<number>;
+}) {
+  const mx = useSharedValue(x);
+  const my = useSharedValue(y);
+  useEffect(() => {
+    const cfg = { duration: 900, easing: Easing.linear };
+    mx.value = withTiming(x, cfg);
+    my.value = withTiming(y, cfg);
+  }, [x, y, mx, my]);
+
+  const style = useAnimatedStyle(() => {
+    const world = TILE * 2 ** z.value;
+    return {
+      transform: [
+        { translateX: (mx.value - cx.value) * world + fw.value / 2 },
+        { translateY: (my.value - cy.value) * world + fh.value / 2 },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View style={[s.marker, style]} pointerEvents="none" accessibilityLabel="You are here">
+      <View style={s.markerBox}>
+        <View style={s.meHalo} />
+        <View style={s.meDot} />
+      </View>
+    </Animated.View>
   );
 }
 
@@ -629,7 +708,7 @@ function Marker({
       <View style={s.markerBox}>
         {marker.label ? (
           <View style={[s.label, marker.kind === 'drop' && s.labelDrop]}>
-            <Text variant="small" tone={marker.kind === 'drop' ? 'onInk' : 'ink'} numberOfLines={1} style={s.labelText}>
+            <Text variant="small" numberOfLines={1} style={s.labelText}>
               {marker.label}
             </Text>
           </View>
@@ -663,9 +742,43 @@ function Marker({
 const BOX = 220;
 const BOX_H = 120;
 
-const s = themed(() =>
-  StyleSheet.create({
-  wrap: { flex: 1, overflow: 'hidden', backgroundColor: color.mapBg },
+/** Label chips are light on both maps, so their ink never changes. */
+const CHIP_INK = '#13241C';
+
+/*
+  The map's own colours, one set per map style. By day the route is pine on a
+  lime band, which holds up on a pale map; at night it flips to lime on pine.
+*/
+function mapColours() {
+  return currentScheme() === 'dark'
+    ? {
+        land: '#1B2421',
+        band: '#24493A',
+        route: LIME,
+        muted: '#4C5C55',
+        chip: '#F5F5F2',
+        dot: '#FFFFFF',
+        ring: NIGHT,
+        startFill: NIGHT,
+        startRing: '#FFFFFF',
+      }
+    : {
+        land: '#F2F2EF',
+        band: LIME,
+        route: PINE,
+        muted: '#B5BDB7',
+        chip: '#FFFFFF',
+        dot: PINE,
+        ring: '#FFFFFF',
+        startFill: '#FFFFFF',
+        startRing: PINE,
+      };
+}
+
+const s = themed(() => {
+  const MAP = mapColours();
+  return StyleSheet.create({
+  wrap: { flex: 1, overflow: 'hidden', backgroundColor: MAP.land },
   layer: {
     position: 'absolute',
     left: 0,
@@ -676,9 +789,9 @@ const s = themed(() =>
   },
   tile: { position: 'absolute' },
   segment: { position: 'absolute' },
-  segCasing: { backgroundColor: color.surface },
-  segPrimary: { backgroundColor: color.brand },
-  segMuted: { backgroundColor: color.lineStrong },
+  segCasing: { backgroundColor: MAP.band },
+  segPrimary: { backgroundColor: MAP.route },
+  segMuted: { backgroundColor: MAP.muted },
   marker: { position: 'absolute', left: 0, top: 0, width: 0, height: 0 },
   // A box centred on the point, so the dot sits exactly on it and the label
   // can float above without shifting it.
@@ -694,71 +807,95 @@ const s = themed(() =>
   // Small on purpose. The map is there to show the road, and markers the size
   // of a fingertip turn a short corridor into clutter.
   dotStart: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: color.brand,
-    borderWidth: 2.5,
-    borderColor: color.surface,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: MAP.startFill,
+    borderWidth: 3,
+    borderColor: MAP.startRing,
   },
   dotEnd: {
-    width: 12,
-    height: 12,
+    width: 13,
+    height: 13,
     borderRadius: 3,
-    backgroundColor: color.brand,
-    borderWidth: 2.5,
-    borderColor: color.surface,
+    backgroundColor: MAP.dot,
   },
   dotStop: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: color.surface,
+    backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: color.brand,
+    borderColor: PINE,
   },
+  // Your stop: lime with a soft halo, the thing on the map that is yours.
   dotDrop: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: color.accent,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: LIME,
     borderWidth: 3,
-    borderColor: color.surface,
+    borderColor: currentScheme() === 'dark' ? NIGHT : PINE,
+    shadowColor: LIME,
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
   },
   dotRider: {
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: MINT,
+    backgroundColor: LIME,
     borderWidth: 2,
-    borderColor: color.surface,
+    borderColor: currentScheme() === 'dark' ? NIGHT : PINE,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Teal on mint in both themes: the badge is the logo's own pairing.
-  dotRiderText: { color: TEAL, fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  // Pine on lime in both themes: the badge is the logo's own pairing.
+  dotRiderText: { color: PINE, fontSize: 9, lineHeight: 11, fontWeight: '800' },
   label: {
     position: 'absolute',
-    bottom: BOX_H / 2 + 9,
+    bottom: BOX_H / 2 + 10,
     maxWidth: 160,
-    backgroundColor: color.surface,
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    shadowColor: color.shadow,
-    shadowOpacity: 0.12,
+    backgroundColor: MAP.chip,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    shadowColor: '#000000',
+    shadowOpacity: 0.3,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 },
     elevation: 2,
   },
-  labelDrop: { backgroundColor: color.brand },
-  labelText: { fontWeight: '600', fontSize: 11, lineHeight: 14 },
-  frameButton: {
+  labelDrop: { backgroundColor: LIME },
+  labelText: { color: CHIP_INK, fontWeight: '700', fontSize: 11, lineHeight: 14 },
+  controls: { position: 'absolute', gap: space.sm, alignItems: 'flex-end' },
+  meHalo: {
     position: 'absolute',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(37,124,255,0.18)',
+  },
+  meDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#257CFF',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  frameButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: color.surface,
+    backgroundColor: MAP.chip,
     alignItems: 'center',
     justifyContent: 'center',
     ...elevation,
@@ -768,21 +905,21 @@ const s = themed(() =>
     position: 'absolute',
     left: space.lg,
     right: space.lg,
-    backgroundColor: color.surface,
+    backgroundColor: MAP.chip,
     borderRadius: radius.md,
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
     ...elevation,
   },
+  troubleText: { color: '#5D6A63' },
   credit: {
     position: 'absolute',
     left: 8,
-    backgroundColor: color.surface,
-    opacity: 0.85,
+    backgroundColor: 'rgba(13,24,20,0.6)',
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 1,
   },
-  creditText: { fontSize: 10, lineHeight: 14 },
-  })
-);
+  creditText: { fontSize: 10, lineHeight: 14, color: '#A2AFA8' },
+  });
+});

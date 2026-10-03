@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useSession } from '@/data/session';
 import { seatsOpen, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { demoNow, hhmm, untilText } from '@/lib/time';
@@ -18,10 +19,24 @@ export default function TripScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
-  const { reserve, releaseSeat, markPresent, finishRide, dropOff, dropOffName, serves, person, me, landmark, role } =
-    useStore();
+  const {
+    reserve,
+    releaseSeat,
+    markPresent,
+    finishRide,
+    dropOff,
+    dropOffName,
+    serves,
+    person,
+    me,
+    landmark,
+    role,
+    error,
+    clearError,
+  } = useStore();
+  const { tester } = useSession();
   const trip = useTrip(id);
-  const [seatLost, setSeatLost] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const now = demoNow();
 
@@ -51,12 +66,48 @@ export default function TripScreen() {
 
   async function onReserve() {
     setBusy(true);
+    setFailed(false);
+    clearError();
     const ok = await reserve(trip!.id);
     setBusy(false);
-    // Two riders can tap the last seat in the same second. The loser is told
-    // plainly rather than left looking at a seat that is not there.
-    if (!ok) setSeatLost(true);
+    if (!ok) setFailed(true);
   }
+
+  /*
+    Why a booking did not go through. The database says no for several
+    reasons and only one of them is a lost race, so the reason is worked out
+    from the trip as it is now (the store refreshes after every attempt). A
+    refusal the database explains in words arrives as the store's error.
+  */
+  const refusal: { title: string; body: string } | null = !failed
+    ? null
+    : error
+      ? { title: 'That seat could not be reserved.', body: error }
+      : trip.status !== 'posted' && trip.status !== 'boarding'
+        ? { title: 'This ride has already left.', body: 'Other rides are on the map.' }
+        : open === 0
+          ? {
+              // Two riders can tap the last seat in the same second. The loser
+              // is told plainly rather than left looking at a seat that is not there.
+              title: 'That seat went while you were reading.',
+              body: 'Someone confirmed a second before you. Other rides are on the map.',
+            }
+          : me && trip.driverId === me.id && !tester
+            ? {
+                title: 'This is your own ride.',
+                body: 'Only accounts on the testers list can book a seat in their own ride.',
+              }
+            : me && trip.driverId === me.id
+              ? {
+                  // The app knows this person is a tester, so the database's
+                  // booking rule is the older one that predates testers.
+                  title: 'The database refused your own ride.',
+                  body: 'You are on the testers list, but the booking rule in the database is out of date. Rerun the testers migration.',
+                }
+              : {
+                  title: 'That seat could not be reserved.',
+                  body: 'The ride is no longer open to you. Other rides are on the map.',
+                };
 
   const mapHeight = Math.round(height * 0.38);
 
@@ -95,13 +146,13 @@ export default function TripScreen() {
             </>
           )}
 
-          {seatLost ? (
+          {refusal ? (
             <Callout tone="stop" icon={<AlertIcon />}>
               <Text variant="body" tone="stop" style={s.bold}>
-                That seat went while you were reading.
+                {refusal.title}
               </Text>
               <Text variant="small" tone="muted">
-                Someone confirmed a second before you. Other rides are on the map.
+                {refusal.body}
               </Text>
             </Callout>
           ) : null}

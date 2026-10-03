@@ -4,8 +4,8 @@ import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native';
 import { useSession } from '@/data/session';
 import { WORK_DOMAIN } from '@/lib/config';
 import { color, font, radius, space, themed } from '@/theme/tokens';
-import { AuthHero } from '@/ui/auth-hero';
-import { Button, Screen } from '@/ui/primitives';
+import { AuthScreen } from '@/ui/auth-hero';
+import { Button } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 
 const CODE_LENGTH = 6;
@@ -64,7 +64,13 @@ export default function WorkEmailScreen() {
   }
 
   return (
-    <Screen
+    <AuthScreen
+      title={lapsed ? 'Quick check.' : 'Confirm your work email.'}
+      body={
+        lapsed
+          ? 'Every 60 days we check you still work here.'
+          : 'Corridor is for colleagues only. We will send you a code.'
+      }
       footer={
         <>
           {sentTo ? (
@@ -85,15 +91,6 @@ export default function WorkEmailScreen() {
           <Button label="Sign out" kind="quiet" onPress={signOut} />
         </>
       }>
-      <AuthHero
-        title={lapsed ? 'Quick check' : 'Confirm your work email'}
-        body={
-          lapsed
-            ? 'Every 60 days we check you still work here.'
-            : 'Corridor is for colleagues only. We will send you a code.'
-        }
-      />
-
       {sentTo ? (
         <>
           <Text variant="body" tone="muted" style={s.lead}>
@@ -190,7 +187,7 @@ export default function WorkEmailScreen() {
       <Text variant="small" tone="faint" style={s.privacy}>
         Only used to confirm you are a colleague. Nobody else sees it.
       </Text>
-    </Screen>
+    </AuthScreen>
   );
 }
 
@@ -205,9 +202,9 @@ const s = themed(() =>
     inputRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: color.sunken,
+      backgroundColor: color.surface,
       borderWidth: 1.5,
-      borderColor: 'transparent',
+      borderColor: color.line,
       borderRadius: radius.lg,
       paddingHorizontal: space.lg,
       marginBottom: space.md,

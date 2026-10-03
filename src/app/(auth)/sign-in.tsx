@@ -5,11 +5,11 @@ import { USING_LOCAL } from '@/data/backend';
 import { useSession } from '@/data/session';
 import { hasOnboarded, markOnboarded } from '@/lib/onboarding';
 import { color, font, radius, space, themed } from '@/theme/tokens';
-import { AuthHero } from '@/ui/auth-hero';
+import { AuthScreen } from '@/ui/auth-hero';
 import { EyeIcon } from '@/ui/icons';
 import { LocalAccounts } from '@/ui/local-accounts';
 import { Onboarding } from '@/ui/onboarding';
-import { Button, Screen } from '@/ui/primitives';
+import { Button } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 
 const MIN_PASSWORD = 8;
@@ -85,29 +85,30 @@ function EmailSignIn() {
   }
 
   return (
-    <Screen
+    <AuthScreen
+      title={creating ? 'Create your account.' : 'Welcome back.'}
+      body={creating ? 'Use your personal email.' : 'Sign in with your personal email.'}
       footer={
         <>
           <Button
             label={busy ? (creating ? 'Creating' : 'Signing in') : creating ? 'Create account' : 'Sign in'}
             onPress={onSubmit}
             disabled={!ready || busy}
+            arrow={!busy}
           />
           <Pressable onPress={switchMode} accessibilityRole="button" hitSlop={8} style={s.switch}>
             <Text variant="small" tone="muted">
               {creating ? 'Have an account? ' : 'New to Corridor? '}
               <Text variant="small" tone="brand" style={s.bold}>
-                {creating ? 'Sign in' : 'Create one'}
+                {creating ? 'Sign in' : 'Create an account'}
               </Text>
             </Text>
           </Pressable>
         </>
       }>
-      <AuthHero
-        title={creating ? 'Create your account' : 'Welcome back'}
-        body={creating ? 'Use your personal email.' : 'Sign in with your personal email.'}
-      />
-
+      <Text variant="eyebrow" style={s.label}>
+        Email
+      </Text>
       <TextInput
         value={email}
         onChangeText={(t) => {
@@ -117,7 +118,7 @@ function EmailSignIn() {
         onFocus={() => setFocus('email')}
         onBlur={() => setFocus(null)}
         style={[s.field, s.input, focus === 'email' && s.fieldFocus]}
-        placeholder="Email"
+        placeholder="you@email.com"
         placeholderTextColor={color.inkFaint}
         autoCapitalize="none"
         autoCorrect={false}
@@ -129,6 +130,9 @@ function EmailSignIn() {
         accessibilityLabel="Email"
       />
 
+      <Text variant="eyebrow" style={s.label}>
+        Password
+      </Text>
       <View style={[s.field, s.row, focus === 'password' && s.fieldFocus]}>
         <TextInput
           ref={passwordField}
@@ -140,7 +144,7 @@ function EmailSignIn() {
           onFocus={() => setFocus('password')}
           onBlur={() => setFocus(null)}
           style={[s.input, s.flex]}
-          placeholder={creating ? `Password (${MIN_PASSWORD}+ characters)` : 'Password'}
+          placeholder={creating ? `At least ${MIN_PASSWORD} characters` : 'Your password'}
           placeholderTextColor={color.inkFaint}
           autoCapitalize="none"
           autoCorrect={false}
@@ -170,7 +174,7 @@ function EmailSignIn() {
           Check {email.trim()} for a confirmation link, then sign in.
         </Text>
       ) : null}
-    </Screen>
+    </AuthScreen>
   );
 }
 
@@ -180,15 +184,16 @@ const s = themed(() =>
     blank: { flex: 1, backgroundColor: color.bg },
     bold: { fontWeight: '700' },
     pressed: { opacity: 0.6 },
+    label: { marginBottom: space.sm },
     field: {
-      backgroundColor: color.sunken,
+      backgroundColor: color.surface,
       borderRadius: radius.lg,
       borderWidth: 1.5,
-      borderColor: 'transparent',
+      borderColor: color.line,
       paddingHorizontal: space.lg,
-      marginBottom: space.md,
+      marginBottom: space.lg,
     },
-    fieldFocus: { borderColor: color.brand, backgroundColor: color.surface },
+    fieldFocus: { borderColor: color.brand },
     row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
     input: {
       paddingVertical: space.lg,

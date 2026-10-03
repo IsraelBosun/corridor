@@ -1,16 +1,34 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Linking, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { USING_LOCAL } from '@/data/backend';
 import { useSession } from '@/data/session';
 import { useStore } from '@/data/store';
+import { remindersOn, setRemindersOn, syncReminders } from '@/lib/reminders';
 import { useTheme, type ThemeMode } from '@/theme/theme';
-import { color, font, MINT, radius, space, TEAL, themed } from '@/theme/tokens';
-import { AlertIcon, CarIcon, CheckIcon, ChevronIcon, PersonIcon, ShieldIcon } from '@/ui/icons';
-import { Avatar, Callout, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
+import { color, font, GUTTER, LIME, PINE, radius, space, themed } from '@/theme/tokens';
+import {
+  AlertIcon,
+  BackIcon,
+  CarIcon,
+  CheckIcon,
+  ChevronIcon,
+  PersonIcon,
+  PlayIcon,
+  ShieldIcon,
+  SignOutIcon,
+} from '@/ui/icons';
+import { Avatar, Callout, Screen, SectionTitle, TileRow } from '@/ui/primitives';
 import { showDialog } from '@/ui/dialog';
+import { useStatusBand } from '@/ui/status-band';
 import { Text } from '@/ui/text';
+
+/* The header is pine in both themes, so its contents keep their own colours. */
+const ON_PINE = '#F5F5F2';
+const ON_PINE_MUTED = '#A9C2B6';
+const PINE_RAISED = '#24493A';
+const PINE_DEEP = '#0B2A20';
 
 /** A work email is good for this long, then it is confirmed again. */
 const MEMBERSHIP_DAYS = 60;
@@ -21,6 +39,7 @@ export default function YouScreen() {
   const { me, role, myTrip, mySeat } = useStore();
   const { email, signOut, setRole, tester } = useSession();
   const [error, setError] = useState<string | null>(null);
+  useStatusBand(PINE);
 
   const driver = role === 'driver';
   // A seat on a ride that has already left is not something to give up, and
@@ -77,9 +96,24 @@ export default function YouScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="Account" />
+      <View style={s.head}>
+        <View style={s.headBar}>
+          <Pressable
+            hitSlop={12}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={({ pressed }) => [s.headBack, pressed && s.pressed]}>
+            <BackIcon size={22} tint={ON_PINE} />
+          </Pressable>
+          <Text variant="heading" style={s.onPine}>
+            Account
+          </Text>
+        </View>
 
-      <Profile name={me?.name ?? 'You'} initials={me?.initials ?? '?'} email={email} driver={driver} />
+        <Profile name={me?.name ?? 'You'} initials={me?.initials ?? '?'} email={email} driver={driver} />
+        <RoleSwitch driver={driver} blocked={blocked} onSwitch={confirmSwitch} />
+      </View>
 
       {USING_LOCAL ? (
         <View style={s.local}>
@@ -99,9 +133,6 @@ export default function YouScreen() {
         </View>
       ) : null}
 
-      <SectionTitle>How you use Corridor</SectionTitle>
-      <RoleSwitch driver={driver} blocked={blocked} onSwitch={confirmSwitch} />
-
       <SectionTitle>{driver ? 'Your usual drive' : 'Your usual ride'}</SectionTitle>
       <Commute driver={driver} />
 
@@ -115,35 +146,34 @@ export default function YouScreen() {
       <SectionTitle>Colleague check</SectionTitle>
       <Membership onError={setError} />
 
+      <SectionTitle>Reminders</SectionTitle>
+      <Reminders driver={driver} />
+
       <SectionTitle>Appearance</SectionTitle>
       <ModePicker />
 
-      <Pressable
-        onPress={() => router.push('/onboarding')}
-        accessibilityRole="button"
-        style={({ pressed }) => [s.card, s.introRow, pressed && s.pressed]}>
-        <View style={s.iconTile}>
-          <CarIcon size={20} tint={color.brandInk} />
-        </View>
-        <View style={s.flex}>
-          <Text variant="body" style={s.bold}>
+      <View style={[s.card, s.group]}>
+        <Pressable
+          onPress={() => router.push('/onboarding')}
+          accessibilityRole="button"
+          style={({ pressed }) => [s.groupRow, pressed && s.pressed]}>
+          <PlayIcon size={22} tint={color.brandInk} />
+          <Text variant="body" style={[s.flex, s.strong]}>
             How Corridor works
           </Text>
-          <Text variant="small" tone="muted">
-            Watch the three step intro again
+          <ChevronIcon />
+        </Pressable>
+        <View style={s.groupLine} />
+        <Pressable
+          onPress={confirmSignOut}
+          accessibilityRole="button"
+          style={({ pressed }) => [s.groupRow, pressed && s.pressed]}>
+          <SignOutIcon size={22} />
+          <Text variant="body" tone="stop" style={[s.flex, s.strong]}>
+            {USING_LOCAL ? 'Sign out, or switch test account' : 'Sign out'}
           </Text>
-        </View>
-        <ChevronIcon />
-      </Pressable>
-
-      <Pressable
-        onPress={confirmSignOut}
-        accessibilityRole="button"
-        style={({ pressed }) => [s.signOut, pressed && s.pressed]}>
-        <Text variant="body" tone="stop" style={s.bold}>
-          {USING_LOCAL ? 'Sign out, or switch test account' : 'Sign out'}
-        </Text>
-      </Pressable>
+        </Pressable>
+      </View>
 
       <Text variant="small" tone="faint" style={s.foot}>
         A notice board between colleagues, not a transport service. Drivers and vehicles are not
@@ -169,27 +199,26 @@ function Profile({
   const { member } = useSession();
   return (
     <View style={s.profile}>
-      <Avatar initials={initials} size={64} />
+      <Avatar initials={initials} size={76} tone="me" />
       <View style={s.flex}>
-        <Text variant="title" numberOfLines={1}>
-          {name}
+        <Text variant="title" numberOfLines={1} style={s.onPine}>
+          {name.split(' ')[0]}
         </Text>
         {email ? (
-          <Text variant="small" tone="muted" numberOfLines={1}>
+          <Text variant="small" numberOfLines={1} style={s.onPineMuted}>
             {email}
           </Text>
         ) : null}
         <View style={s.chips}>
           <View style={s.chip}>
-            {driver ? <CarIcon size={13} tint={color.brandInk} /> : <PersonIcon size={13} tint={color.brandInk} />}
-            <Text variant="small" tone="brand" style={s.chipText}>
+            <Text variant="small" style={s.chipText}>
               {driver ? 'Driver' : 'Rider'}
             </Text>
           </View>
           {member ? (
-            <View style={[s.chip, s.chipGo]}>
-              <CheckIcon size={13} />
-              <Text variant="small" tone="go" style={s.chipText}>
+            <View style={[s.chip, s.chipOutline]}>
+              <CheckIcon size={13} tint={LIME} />
+              <Text variant="small" style={[s.chipText, s.chipOutlineText]}>
                 Verified
               </Text>
             </View>
@@ -233,12 +262,12 @@ function RoleSwitch({
               !on && blocked ? s.dim : null,
               pressed && !on && s.pressed,
             ]}>
-            <Icon size={20} tint={on ? color.onInk : color.inkMuted} />
+            <Icon size={20} tint={on ? PINE : ON_PINE_MUTED} />
             <View>
-              <Text variant="body" tone={on ? 'onInk' : 'ink'} style={s.bold}>
+              <Text variant="heading" style={on ? s.segmentOnText : s.onPine}>
                 {label}
               </Text>
-              <Text variant="small" tone={on ? 'onInk' : 'muted'} style={on ? s.segmentSubOn : null}>
+              <Text variant="small" style={on ? s.segmentOnSub : s.onPineMuted}>
                 {sub}
               </Text>
             </View>
@@ -246,7 +275,7 @@ function RoleSwitch({
         ))}
       </View>
       {blocked ? (
-        <Text variant="small" tone="faint" style={s.under}>
+        <Text variant="small" style={[s.under, s.onPineMuted]}>
           {blocked}
         </Text>
       ) : null}
@@ -274,29 +303,27 @@ function Commute({ driver }: { driver: boolean }) {
         <View style={s.rail}>
           <View style={s.railStart} />
           <View style={s.railLine} />
-          <View style={[s.railEnd, !set && s.railEndEmpty]}>
-            <View style={s.railEndDot} />
-          </View>
+          <View style={[s.railEnd, !set && s.railEndEmpty]} />
         </View>
 
         <View style={s.flex}>
-          <Text variant="small" tone="faint">
+          <Text variant="small" tone="muted">
             From
           </Text>
-          <Text variant="body" style={s.bold} numberOfLines={1}>
+          <Text variant="heading" numberOfLines={1}>
             {pickup}
           </Text>
           <View style={s.commuteGap} />
-          <Text variant="small" tone="faint">
+          <Text variant="small" tone="muted">
             {driver ? 'Usually heading to' : 'Usually getting off at'}
           </Text>
-          <Text variant="body" tone={set ? 'ink' : 'brand'} style={s.bold} numberOfLines={1}>
+          <Text variant="heading" tone={set ? 'ink' : 'brand'} numberOfLines={1}>
             {dropOff?.name ?? 'Add your usual place'}
           </Text>
         </View>
 
         <View style={s.changePill}>
-          <Text variant="small" tone="brand" style={s.bold}>
+          <Text variant="body" style={s.strong}>
             {set ? 'Change' : 'Add'}
           </Text>
         </View>
@@ -343,10 +370,10 @@ function Membership({ onError }: { onError: (e: string) => void }) {
     <View style={s.card}>
       <View style={s.cardHead}>
         <View style={s.iconTile}>
-          <ShieldIcon size={20} tint={color.brandInk} />
+          <ShieldIcon size={22} tint={LIME} />
         </View>
         <View style={s.flex}>
-          <Text variant="body" style={s.bold} numberOfLines={1}>
+          <Text variant="body" style={s.strong} numberOfLines={1}>
             {membership?.workEmail ?? 'No work email yet'}
           </Text>
           <Text variant="small" tone="muted">
@@ -356,11 +383,12 @@ function Membership({ onError }: { onError: (e: string) => void }) {
           </Text>
         </View>
         {expires ? (
-          <View style={s.daysBadge}>
-            <Text variant="small" tone="go" style={s.bold}>
-              {daysLeft} {daysLeft === 1 ? 'day' : 'days'}
-            </Text>
-          </View>
+          <Text
+            variant="dataLarge"
+            tone="brand"
+            accessibilityLabel={daysLeft === 1 ? '1 day left' : daysLeft + ' days left'}>
+            {daysLeft}d
+          </Text>
         ) : null}
       </View>
 
@@ -377,7 +405,7 @@ function Membership({ onError }: { onError: (e: string) => void }) {
         accessibilityRole="button"
         style={({ pressed }) => [s.linkRow, pressed && s.pressed]}>
         <View style={s.flex}>
-          <Text variant="body" tone="stop" style={s.bold}>
+          <Text variant="body" tone="stop" style={s.strong}>
             I have left this job
           </Text>
           <Text variant="small" tone="muted">
@@ -390,65 +418,67 @@ function Membership({ onError }: { onError: (e: string) => void }) {
   );
 }
 
-/** What each theme tile shows: a tiny page with a header bar and two lines. */
-const PREVIEWS: Record<'light' | 'dark', { bg: string; bar: string; line: string }> = {
-  light: { bg: '#FFFFFF', bar: TEAL, line: '#E2ECEA' },
-  dark: { bg: '#061A1E', bar: MINT, line: '#173F47' },
-};
+const MODES: ThemeMode[] = ['light', 'dark', 'system'];
+const MODE_LABEL: Record<ThemeMode, string> = { light: 'Light', dark: 'Dark', system: 'System' };
 
-const MODES: { mode: ThemeMode; label: string }[] = [
-  { mode: 'light', label: 'Light' },
-  { mode: 'dark', label: 'Dark' },
-  { mode: 'system', label: 'System' },
-];
+/** Light, dark, or follow the phone. Kept on this phone only. */
+/**
+ * The 15:00 weekday nudge, on or off. If the phone has notifications blocked
+ * for Corridor, say so and offer the way to the phone's settings, since the
+ * app cannot ask a second time.
+ */
+function Reminders({ driver }: { driver: boolean }) {
+  const [on, setOn] = useState(true);
+  const [blocked, setBlocked] = useState(false);
+  const role = driver ? 'driver' : 'passenger';
 
-function Preview({ scheme }: { scheme: 'light' | 'dark' }) {
-  const p = PREVIEWS[scheme];
+  useEffect(() => {
+    remindersOn().then(setOn);
+  }, []);
+
+  async function toggle(next: boolean) {
+    setOn(next);
+    await setRemindersOn(next);
+    const result = await syncReminders(role);
+    setBlocked(result === 'denied');
+  }
+
   return (
-    <View style={[s.previewHalf, { backgroundColor: p.bg }]}>
-      <View style={[s.previewBar, { backgroundColor: p.bar }]} />
-      <View style={[s.previewLine, { backgroundColor: p.line }]} />
-      <View style={[s.previewLine, s.previewShort, { backgroundColor: p.line }]} />
+    <View style={s.card}>
+      <View style={s.cardHead}>
+        <View style={s.flex}>
+          <Text variant="body" style={s.strong}>
+            Weekday nudge at 15:00
+          </Text>
+          <Text variant="small" tone="muted">
+            {driver ? 'A reminder to post your ride home.' : 'A reminder to look for a ride home.'}
+          </Text>
+        </View>
+        <Switch
+          value={on}
+          onValueChange={toggle}
+          trackColor={{ false: color.lineStrong, true: color.brand }}
+          thumbColor={color.surface}
+          accessibilityLabel="Weekday reminder at 15:00"
+        />
+      </View>
+      {blocked ? (
+        <Pressable onPress={() => Linking.openSettings()} accessibilityRole="button" style={s.cardNote}>
+          <Text variant="small" tone="stop">
+            Notifications are off for Corridor on this phone.{' '}
+            <Text variant="small" tone="brand" style={s.strong}>
+              Open settings
+            </Text>
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
-/** Light, dark, or follow the phone, each tile a small picture of itself. Kept on this phone only. */
 function ModePicker() {
   const { mode, setMode } = useTheme();
-  return (
-    <View style={s.modes} accessibilityRole="radiogroup">
-      {MODES.map((m) => {
-        const on = m.mode === mode;
-        return (
-          <Pressable
-            key={m.mode}
-            onPress={() => setMode(m.mode)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: on }}
-            accessibilityLabel={m.label}
-            style={({ pressed }) => [s.mode, on && s.modeOn, pressed && s.pressed]}>
-            <View style={s.preview}>
-              {m.mode === 'system' ? (
-                <>
-                  <Preview scheme="light" />
-                  <Preview scheme="dark" />
-                </>
-              ) : (
-                <Preview scheme={m.mode} />
-              )}
-            </View>
-            <View style={s.modeLabel}>
-              <View style={[s.radio, on && s.radioOn]}>{on ? <View style={s.radioDot} /> : null}</View>
-              <Text variant="small" style={s.bold}>
-                {m.label}
-              </Text>
-            </View>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
+  return <TileRow options={MODES} value={mode} onChange={setMode} render={(m) => MODE_LABEL[m]} />;
 }
 
 const CAR_MAX = 30;
@@ -480,19 +510,7 @@ function CarField() {
 
   return (
     <View style={s.card}>
-      <View style={s.cardHead}>
-        <View style={s.iconTile}>
-          <CarIcon size={20} tint={color.brandInk} />
-        </View>
-        <View style={s.flex}>
-          <Text variant="body" style={s.bold}>
-            {saved || 'Describe your car'}
-          </Text>
-          <Text variant="small" tone="muted">
-            Only riders with a seat see it
-          </Text>
-        </View>
-      </View>
+      <Text variant="eyebrow">What riders look for</Text>
 
       <View style={[s.inputWrap, focused && s.inputFocused, error ? s.inputError : null]}>
         <TextInput
@@ -531,7 +549,7 @@ function CarField() {
             disabled={busy}
             accessibilityRole="button"
             style={({ pressed }) => [s.save, pressed && s.pressed]}>
-            <Text variant="small" tone="onInk" style={s.bold}>
+            <Text variant="small" tone="onAccent" style={s.bold}>
               {busy ? 'Saving' : 'Save'}
             </Text>
           </Pressable>
@@ -544,8 +562,8 @@ function CarField() {
           </Text>
         </View>
       ) : (
-        <Text variant="small" tone="faint" style={s.cardNote}>
-          Colour, make, anything that stands out. No plate.
+        <Text variant="small" tone="muted" style={s.cardNote}>
+          Colour, make, anything that stands out. No plate. Only riders with a seat see it.
         </Text>
       )}
     </View>
@@ -556,30 +574,50 @@ const s = themed(() =>
   StyleSheet.create({
     flex: { flex: 1 },
     bold: { fontWeight: '600' },
+    strong: { fontWeight: '700' },
     pressed: { opacity: 0.7 },
     dim: { opacity: 0.5 },
     gapTop: { marginTop: space.md },
     under: { marginTop: space.sm, paddingHorizontal: space.xs },
+    onPine: { color: ON_PINE },
+    onPineMuted: { color: ON_PINE_MUTED },
+
+    // The pine header, edge to edge under the status bar.
+    head: {
+      backgroundColor: PINE,
+      marginHorizontal: -GUTTER,
+      paddingHorizontal: GUTTER,
+      paddingTop: space.lg,
+      paddingBottom: space.xl,
+      borderBottomLeftRadius: 32,
+      borderBottomRightRadius: 32,
+      gap: space.xl,
+    },
+    headBar: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+    headBack: {
+      width: 44,
+      height: 44,
+      borderRadius: radius.md,
+      backgroundColor: PINE_RAISED,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
 
     // Profile
-    profile: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: space.lg,
-      marginTop: space.sm,
-    },
+    profile: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.sm },
     chip: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 5,
-      backgroundColor: color.brandSoft,
+      gap: 4,
+      backgroundColor: LIME,
       borderRadius: radius.pill,
       paddingHorizontal: space.md,
-      paddingVertical: 4,
+      paddingVertical: 3,
     },
-    chipGo: { backgroundColor: color.goSoft },
-    chipText: { fontWeight: '700' },
+    chipText: { color: PINE, fontWeight: '800', fontSize: 13 },
+    chipOutline: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#4C7A66' },
+    chipOutlineText: { color: LIME },
 
     local: {
       backgroundColor: color.accentSoft,
@@ -589,13 +627,13 @@ const s = themed(() =>
       marginTop: space.md,
     },
 
-    // Role switch
+    // Role switch, on the pine header
     segment: {
       flexDirection: 'row',
       gap: space.xs,
       padding: space.xs,
       borderRadius: radius.xl,
-      backgroundColor: color.sunken,
+      backgroundColor: PINE_DEEP,
     },
     segmentItem: {
       flex: 1,
@@ -606,32 +644,24 @@ const s = themed(() =>
       paddingHorizontal: space.lg,
       borderRadius: radius.lg,
     },
-    segmentOn: {
-      backgroundColor: color.brand,
-      shadowColor: TEAL,
-      shadowOpacity: 0.18,
-      shadowRadius: 8,
-      shadowOffset: { width: 0, height: 3 },
-      elevation: 3,
-    },
-    segmentSubOn: { opacity: 0.8 },
+    segmentOn: { backgroundColor: ON_PINE },
+    segmentOnText: { color: PINE },
+    segmentOnSub: { color: '#5D6A63' },
 
     // Cards
     card: {
       backgroundColor: color.surface,
-      borderWidth: 1,
-      borderColor: color.line,
       borderRadius: radius.xl,
       padding: space.lg,
     },
     cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-    cardNote: { marginTop: space.sm },
-    cardDivider: { height: 1, backgroundColor: color.line, marginVertical: space.md },
+    cardNote: { marginTop: space.md },
+    cardDivider: { height: 1, backgroundColor: color.line, marginVertical: space.lg },
     iconTile: {
-      width: 42,
-      height: 42,
+      width: 44,
+      height: 44,
       borderRadius: radius.md,
-      backgroundColor: color.brandSoft,
+      backgroundColor: PINE,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -647,50 +677,49 @@ const s = themed(() =>
       borderColor: color.brand,
       backgroundColor: color.surface,
     },
-    railLine: { flex: 1, width: 2, backgroundColor: color.lineStrong, marginVertical: 4 },
-    railEnd: {
-      width: 16,
-      height: 16,
-      borderRadius: 8,
-      backgroundColor: MINT,
-      alignItems: 'center',
-      justifyContent: 'center',
+    railLine: {
+      flex: 1,
+      width: 0,
+      borderLeftWidth: 1.5,
+      borderStyle: 'dashed',
+      borderColor: color.inkFaint,
+      marginVertical: 4,
     },
-    railEndEmpty: { backgroundColor: color.line },
-    railEndDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: TEAL },
+    railEnd: {
+      width: 14,
+      height: 14,
+      borderRadius: 4,
+      backgroundColor: LIME,
+      borderWidth: 2,
+      borderColor: PINE,
+    },
+    railEndEmpty: { backgroundColor: color.line, borderColor: color.lineStrong },
     commuteGap: { height: space.lg },
     changePill: {
       alignSelf: 'center',
-      backgroundColor: color.brandSoft,
-      borderRadius: radius.pill,
-      paddingHorizontal: space.md,
-      paddingVertical: 6,
+      backgroundColor: color.sunken,
+      borderRadius: radius.md,
+      paddingHorizontal: space.lg,
+      paddingVertical: space.md,
     },
 
     // Membership
-    daysBadge: {
-      backgroundColor: color.goSoft,
-      borderRadius: radius.pill,
-      paddingHorizontal: space.md,
-      paddingVertical: 4,
-    },
     track: {
-      height: 6,
-      borderRadius: 3,
+      height: 8,
+      borderRadius: 4,
       backgroundColor: color.sunken,
       marginTop: space.lg,
       overflow: 'hidden',
     },
-    fill: { height: 6, borderRadius: 3, backgroundColor: color.go },
+    fill: { height: 8, borderRadius: 4, backgroundColor: color.brand },
     linkRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-    introRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xl },
 
     // Car
     inputWrap: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: space.sm,
-      marginTop: space.lg,
+      marginTop: space.md,
       backgroundColor: color.sunken,
       borderWidth: 1.5,
       borderColor: 'transparent',
@@ -701,71 +730,24 @@ const s = themed(() =>
     inputError: { borderColor: color.stop },
     input: {
       flex: 1,
-      paddingVertical: space.md,
+      paddingVertical: space.lg,
       fontSize: 16,
       fontFamily: font.sans,
       color: color.ink,
     },
     saveRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md },
     save: {
-      backgroundColor: color.brand,
+      backgroundColor: color.accent,
       borderRadius: radius.pill,
       paddingHorizontal: space.xl,
       paddingVertical: space.sm,
     },
 
-    // Appearance
-    modes: { flexDirection: 'row', gap: space.sm },
-    mode: {
-      flex: 1,
-      padding: space.sm,
-      borderRadius: radius.lg,
-      borderWidth: 1.5,
-      borderColor: color.line,
-      backgroundColor: color.surface,
-    },
-    modeOn: { borderColor: color.brand },
-    preview: {
-      flexDirection: 'row',
-      height: 64,
-      borderRadius: radius.sm,
-      overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: color.line,
-    },
-    previewHalf: { flex: 1, padding: 6, gap: 4 },
-    previewBar: { height: 8, borderRadius: 3, width: '70%', marginBottom: 2 },
-    previewLine: { height: 5, borderRadius: 3, width: '100%' },
-    previewShort: { width: '55%' },
-    modeLabel: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      marginTop: space.sm,
-      paddingHorizontal: 2,
-    },
-    radio: {
-      width: 16,
-      height: 16,
-      borderRadius: 8,
-      borderWidth: 1.5,
-      borderColor: color.lineStrong,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    radioOn: { borderColor: color.brand },
-    radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: color.brand },
+    // How it works and sign out
+    group: { marginTop: space.xl, paddingVertical: 0 },
+    groupRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.lg },
+    groupLine: { height: 1, backgroundColor: color.line },
 
-    // Footer
-    signOut: {
-      marginTop: space.xxl,
-      alignItems: 'center',
-      paddingVertical: space.lg,
-      borderRadius: radius.xl,
-      borderWidth: 1,
-      borderColor: color.line,
-      backgroundColor: color.surface,
-    },
     foot: { marginTop: space.xl, textAlign: 'center', paddingHorizontal: space.md },
   })
 );

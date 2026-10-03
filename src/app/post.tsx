@@ -7,7 +7,7 @@ import type { Destination } from '@/data/types';
 import type { Place } from '@/lib/places';
 import { EVENING_END_MIN, EVENING_START_MIN } from '@/lib/config';
 import { hhmm } from '@/lib/time';
-import { color, font, radius, space, themed } from '@/theme/tokens';
+import { color, font, LIME, PINE, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, CarIcon, ChevronIcon, PinIcon } from '@/ui/icons';
 import { Button, Callout, Field, Screen, ScreenHeader, TileRow } from '@/ui/primitives';
 import { PlaceSearch } from '@/ui/place-search';
@@ -137,7 +137,7 @@ export default function PostTripScreen() {
           ) : null}
         </>
       }>
-      <ScreenHeader title={already ? 'Edit your ride' : 'Offer a ride'} icon="close" onBack={close} />
+      <ScreenHeader title={already ? 'Edit ride' : 'Offer a ride'} icon="close" onBack={close} />
 
       {already && already.riders.length > 0 ? (
         <Callout>
@@ -157,11 +157,11 @@ export default function PostTripScreen() {
       </View>
 
       <Field
-        label={`From ${pickup ? pickup.name : 'the pickup'}, where are you going?`}
+        label={`From ${pickup ? pickup.name : 'the pickup'}, heading to`}
         hint={
           usual && destination?.name === usual.name
             ? 'Your usual destination from Account. Change it here for tonight only.'
-            : "Riders whose drop off is along your road will see your ride. It is deleted with tonight's ride."
+            : 'Riders dropping off along your road will see this ride. It disappears after tonight.'
         }>
         <Pressable
           onPress={() => setSearching(true)}
@@ -169,16 +169,16 @@ export default function PostTripScreen() {
           accessibilityLabel="Where are you going"
           style={({ pressed }) => [s.dest, pressed && s.pressed]}>
           <View style={s.destPin}>
-            <PinIcon size={18} tint={color.onInk} />
+            <PinIcon size={18} tint={LIME} />
           </View>
           <Text
-            variant="body"
+            variant={destination ? 'heading' : 'body'}
             tone={destination ? 'ink' : 'faint'}
             numberOfLines={1}
-            style={[s.flex, s.destText]}>
+            style={s.flex}>
             {destination?.name ?? 'Search an estate, junction or street'}
           </Text>
-          <ChevronIcon tint={color.brandInk} />
+          <ChevronIcon tint={color.inkMuted} />
         </Pressable>
       </Field>
 
@@ -188,16 +188,16 @@ export default function PostTripScreen() {
             accessibilityLabel="Fifteen minutes earlier"
             onPress={() => setDepartMin((m) => Math.max(EARLIEST, m - 15))}
             style={({ pressed }) => [s.step, pressed && s.pressed]}>
-            <Text variant="title" tone="brand">−</Text>
+            <Text variant="title" style={s.stepMinus}>−</Text>
           </Pressable>
-          <Text variant="title" style={s.timeText}>
+          <Text variant="display" style={s.timeText}>
             {hhmm(departMin)}
           </Text>
           <Pressable
             accessibilityLabel="Fifteen minutes later"
             onPress={() => setDepartMin((m) => Math.min(LATEST, m + 15))}
-            style={({ pressed }) => [s.step, pressed && s.pressed]}>
-            <Text variant="title" tone="brand">+</Text>
+            style={({ pressed }) => [s.step, s.stepPlus, pressed && s.pressed]}>
+            <Text variant="title" style={s.stepPlusText}>+</Text>
           </Pressable>
         </View>
       </Field>
@@ -275,39 +275,42 @@ const s = themed(() =>
     alignItems: 'center',
     gap: space.md,
     backgroundColor: color.surface,
-    borderWidth: 1.5,
-    borderColor: color.brand,
+    borderWidth: 1,
+    borderColor: color.line,
     borderRadius: radius.lg,
     paddingHorizontal: space.md,
     paddingVertical: space.md,
   },
   destPin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: color.brand,
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: PINE,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  destText: { fontWeight: '600' },
-  map: { height: 220, borderRadius: radius.xl, overflow: 'hidden', marginBottom: space.xl },
+  map: { height: 150, borderRadius: radius.xl, overflow: 'hidden', marginBottom: space.xl },
+  // Pine in both themes: the time is the one number on this screen that matters.
   time: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: color.brandSoft,
+    backgroundColor: PINE,
     borderRadius: radius.xl,
-    padding: space.sm,
+    padding: space.md,
   },
-  timeText: { fontVariant: ['tabular-nums'], color: color.brandInk, fontSize: 32, lineHeight: 38 },
+  timeText: { fontVariant: ['tabular-nums'], color: '#FFFFFF', fontSize: 44, lineHeight: 50 },
   step: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.lg,
-    backgroundColor: color.surface,
+    width: 56,
+    height: 56,
+    borderRadius: radius.md,
+    backgroundColor: '#24493A',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  stepMinus: { color: '#FFFFFF' },
+  stepPlus: { backgroundColor: LIME },
+  stepPlusText: { color: PINE },
   input: {
     backgroundColor: color.surface,
     borderWidth: 1,

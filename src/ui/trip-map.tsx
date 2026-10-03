@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { useStore } from '@/data/store';
 import type { Destination, DropOff, Trip } from '@/data/types';
 import { useRoad } from '@/lib/directions';
+import { useMyLocation } from '@/lib/location';
 import type { LngLat } from '@/lib/mapbox';
 import { MapView, type MapMarker, type MapRoute, type Padding } from './map';
 
@@ -16,8 +17,9 @@ const LAGOS: LngLat = { lat: 6.45, lng: 3.5 };
  * types. This is the thin map adapter the brief asks for. Swapping the tile
  * provider or the map underneath happens in ui/map.tsx and here, nowhere else.
  *
- * It never plots a person. The drop off pin is the place the rider chose to be
- * set down, shown only to them and to people on their trip.
+ * It never plots another person. The drop off pin is the place the rider chose
+ * to be set down, shown only to them and to people on their trip. The one live
+ * position is the viewer's own, as a "you are here" dot on their screen only.
  */
 export function TripMap({
   stops,
@@ -43,6 +45,7 @@ export function TripMap({
   controlsBottom?: number;
 }) {
   const { landmark } = useStore();
+  const me = useMyLocation();
 
   const located = useMemo(
     () =>
@@ -113,7 +116,16 @@ export function TripMap({
     return all.length > 0 ? all : [LAGOS];
   }, [points, drop, riderDrops]);
 
-  return <MapView routes={routes} markers={markers} fit={fit} padding={padding} controlsBottom={controlsBottom} />;
+  return (
+    <MapView
+      routes={routes}
+      markers={markers}
+      fit={fit}
+      padding={padding}
+      controlsBottom={controlsBottom}
+      me={me}
+    />
+  );
 }
 
 export type RiderDrop = {

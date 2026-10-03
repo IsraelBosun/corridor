@@ -13,11 +13,11 @@ export const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '';
 export const MAPBOX_READY = MAPBOX_TOKEN.startsWith('pk.');
 
 /**
- * Full colour streets by day, Mapbox's dark map at night. Read per tile, so a
- * theme switch redraws with the other style.
+ * Mapbox's light map by day, its dark map at night. Read per tile, so a theme
+ * switch redraws with the other style.
  */
 function style(): string {
-  return currentScheme() === 'dark' ? 'mapbox/dark-v11' : 'mapbox/streets-v12';
+  return currentScheme() === 'dark' ? 'mapbox/dark-v11' : 'mapbox/light-v11';
 }
 
 export const TILE = 256;

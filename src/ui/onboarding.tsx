@@ -10,33 +10,47 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G, Path, Rect, Text as SvgText } from 'react-native-svg';
 
-import { color, MINT, radius, space, TEAL, themed } from '@/theme/tokens';
+import { LIME, NIGHT, PINE, radius, space, themed } from '@/theme/tokens';
 import { ArrowIcon } from './icons';
 import { Text } from './text';
+
+/*
+  The intro is always at night, whatever the theme: it is the first thing
+  anyone sees, and it is drawn like the map they are about to use.
+*/
+const INK = '#F5F5F2';
+const MUTED = '#A9B5AE';
+const FAINT = '#6E7C74';
+const CARD = '#16231E';
+const GRID = '#22332C';
+const BAND = '#24493A';
 
 /**
  * The three slide intro. Shown once on a phone's first open, and again from
  * Account. Each slide is a drawing and two lines; the drawings are plain SVG
- * so they stay sharp and follow light and dark.
+ * so they stay sharp at any size.
  */
 const SLIDES = [
   {
     key: 'ride',
-    title: 'Seats home with colleagues',
+    lead: 'Seats home with',
+    hi: 'colleagues.',
     body: 'Drivers heading your way post a ride after work. Grab a free seat and leave the office together.',
-    Art: CarArt,
-  },
-  {
-    key: 'route',
-    title: 'Dropped off along the way',
-    body: 'Set where you get off once. You see the rides whose road passes close to it, and drivers see every stop in order.',
     Art: RouteArt,
   },
   {
+    key: 'route',
+    lead: 'Dropped off',
+    hi: 'along the way.',
+    body: 'Set where you get off once. You see the rides whose road passes close to it, and drivers see every stop in order.',
+    Art: StopArt,
+  },
+  {
     key: 'trust',
-    title: 'Only people you work with',
+    lead: 'Only people',
+    hi: 'you work with.',
     body: 'Everyone confirms a work email, checked again every 60 days. No money changes hands, ever.',
     Art: TrustArt,
   },
@@ -60,15 +74,17 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     setIndex(to);
   }
 
+  const pad = (n: number) => String(n).padStart(2, '0');
+
   return (
     <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
       <View style={s.top}>
-        <Text variant="small" tone="faint" style={s.count}>
-          {index + 1} / {SLIDES.length}
+        <Text variant="small" style={s.count}>
+          {pad(index + 1)} / {pad(SLIDES.length)}
         </Text>
         {!last ? (
           <Pressable onPress={onDone} hitSlop={12} accessibilityRole="button">
-            <Text variant="body" tone="muted" style={s.bold}>
+            <Text variant="body" style={s.skip}>
               Skip
             </Text>
           </Pressable>
@@ -99,10 +115,10 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           onPress={next}
           accessibilityRole="button"
           style={({ pressed }) => [s.button, last && s.buttonWide, pressed && s.pressed]}>
-          <Text variant="body" tone="onInk" style={s.bold}>
+          <Text variant="heading" style={s.buttonText}>
             {last ? 'Get started' : 'Next'}
           </Text>
-          <ArrowIcon size={18} tint={color.onInk} />
+          <ArrowIcon size={18} tint={PINE} />
         </Pressable>
       </View>
     </SafeAreaView>
@@ -125,7 +141,7 @@ function Slide({
   const art = useAnimatedStyle(() => ({
     transform: [
       { translateX: interpolate(scrollX.value, range, [width * 0.25, 0, -width * 0.25], Extrapolation.CLAMP) },
-      { scale: interpolate(scrollX.value, range, [0.85, 1, 0.85], Extrapolation.CLAMP) },
+      { scale: interpolate(scrollX.value, range, [0.9, 1, 0.9], Extrapolation.CLAMP) },
     ],
     opacity: interpolate(scrollX.value, range, [0, 1, 0], Extrapolation.CLAMP),
   }));
@@ -134,18 +150,26 @@ function Slide({
     transform: [{ translateY: interpolate(scrollX.value, range, [16, 0, 16], Extrapolation.CLAMP) }],
   }));
   const { Art } = slide;
-  const size = Math.min(width - space.xl * 2, 340);
+  const { height } = useWindowDimensions();
+  // Wide enough to fill the page, short enough to leave room for the words.
+  const size = Math.min(width - space.xl * 2, 360, (height * 0.44) / 1.13);
 
   return (
     <View style={[s.slide, { width }]}>
       <Animated.View style={[s.art, art]}>
-        <Art size={size} />
+        <View style={[s.card, { width: size, height: size * 1.13 }]}>
+          <Art size={size} />
+        </View>
       </Animated.View>
       <Animated.View style={words}>
         <Text variant="display" style={s.title}>
-          {slide.title}
+          {slide.lead}
+          {'\n'}
+          <Text variant="display" style={s.hi}>
+            {slide.hi}
+          </Text>
         </Text>
-        <Text variant="body" tone="muted" style={s.body}>
+        <Text variant="body" style={s.body}>
           {slide.body}
         </Text>
       </Animated.View>
@@ -157,152 +181,169 @@ function Dot({ i, width, scrollX }: { i: number; width: number; scrollX: SharedV
   const style = useAnimatedStyle(() => {
     const range = [(i - 1) * width, i * width, (i + 1) * width];
     return {
-      width: interpolate(scrollX.value, range, [8, 28, 8], Extrapolation.CLAMP),
-      opacity: interpolate(scrollX.value, range, [0.35, 1, 0.35], Extrapolation.CLAMP),
+      width: interpolate(scrollX.value, range, [6, 28, 6], Extrapolation.CLAMP),
+      opacity: interpolate(scrollX.value, range, [0.3, 1, 0.3], Extrapolation.CLAMP),
     };
   });
   return <Animated.View style={[s.dot, style]} />;
 }
 
-/* Drawings. 300 by 260, on a soft brand circle, in the app's two colours. */
+/* Drawings. 300 by 340, on a dark map card with a faint street grid. */
 
-/** A car on the road home, office tower behind. */
-function CarArt({ size }: { size: number }) {
+function Grid() {
   return (
-    <Svg width={size} height={size * 0.87} viewBox="0 0 300 260">
-      <Circle cx="150" cy="128" r="118" fill={color.brandSoft} />
+    <Path
+      d="M0 100 H300 M0 200 H300 M0 300 H300 M70 0 V340 M155 0 V340 M240 0 V340"
+      stroke={GRID}
+      strokeWidth="1.5"
+    />
+  );
+}
 
-      {/* Office tower and a smaller block. */}
-      <Rect x="46" y="38" width="62" height="150" rx="8" fill={TEAL} />
-      {[0, 1, 2, 3, 4, 5].map((r) =>
-        [0, 1, 2].map((c) => (
+/** The office, the road home with two drop offs on it, and the end of the line. */
+function RouteArt({ size }: { size: number }) {
+  const road = 'M86 248 C 130 248, 140 200, 152 178 S 196 120, 226 112 S 262 90, 268 60';
+  return (
+    <Svg width={size} height={size * 1.13} viewBox="0 0 300 340">
+      <Grid />
+
+      {/* The office, with lights on. */}
+      <Rect x="28" y="100" width="58" height="140" rx="10" fill="#1F5A45" />
+      {[0, 1, 2, 3, 4].map((r) =>
+        [0, 1].map((c) => (
           <Rect
             key={`${r}-${c}`}
-            x={56 + c * 16}
-            y={52 + r * 20}
+            x={42 + c * 22}
+            y={116 + r * 24}
             width="10"
-            height="12"
+            height="10"
             rx="2"
-            fill={MINT}
-            opacity={(r + c) % 3 === 0 ? 0.95 : 0.35}
+            fill={LIME}
+            opacity={(r * 2 + c) % 3 === 0 ? 0.95 : 0.25}
           />
         ))
       )}
-      <Rect x="112" y="98" width="36" height="90" rx="6" fill={TEAL} opacity="0.75" />
 
-      {/* Sun going down. */}
-      <Circle cx="232" cy="62" r="20" fill={MINT} opacity="0.55" />
+      <Path d={road} stroke={BAND} strokeWidth="16" strokeLinecap="round" fill="none" />
+      <Path d={road} stroke={LIME} strokeWidth="6" strokeLinecap="round" fill="none" />
 
-      {/* Road. */}
-      <Rect x="14" y="188" width="272" height="40" rx="20" fill={TEAL} />
-      <Line x1="34" y1="208" x2="270" y2="208" stroke={MINT} strokeWidth="3" strokeDasharray="12 10" strokeLinecap="round" opacity="0.8" />
+      {/* Pickup at the office gate. */}
+      <Circle cx="86" cy="248" r="9" fill={NIGHT} stroke={LIME} strokeWidth="4" />
 
-      {/* Car. */}
-      <G>
-        <Path d="M140 172 L160 146 Q164 141 171 141 H214 Q221 141 226 147 L244 172 Z" fill={MINT} />
-        <Path d="M152 170 L166 151 Q168 148 172 148 H188 V170 Z" fill={TEAL} opacity="0.85" />
-        <Path d="M194 170 V148 H212 Q216 148 219 151 L234 170 Z" fill={TEAL} opacity="0.85" />
-        <Rect x="122" y="166" width="140" height="28" rx="12" fill={MINT} />
-        <Rect x="250" y="174" width="10" height="7" rx="3.5" fill="#FFE08A" />
-        <Rect x="124" y="174" width="8" height="7" rx="3.5" fill="#FF8A80" />
-        <Circle cx="158" cy="194" r="14" fill={TEAL} />
-        <Circle cx="158" cy="194" r="5.5" fill={MINT} />
-        <Circle cx="228" cy="194" r="14" fill={TEAL} />
-        <Circle cx="228" cy="194" r="5.5" fill={MINT} />
-      </G>
+      {[
+        { x: 152, y: 178, n: '1' },
+        { x: 226, y: 112, n: '2' },
+      ].map((d) => (
+        <G key={d.n}>
+          <Circle cx={d.x} cy={d.y} r="14" fill={LIME} />
+          <SvgText x={d.x} y={d.y + 5} fontSize="14" fontFamily="Manrope_800ExtraBold" fill={PINE} textAnchor="middle">
+            {d.n}
+          </SvgText>
+        </G>
+      ))}
 
-      {/* Speed lines. */}
-      <Line x1="84" y1="160" x2="112" y2="160" stroke={TEAL} strokeWidth="4" strokeLinecap="round" opacity="0.35" />
-      <Line x1="96" y1="176" x2="114" y2="176" stroke={TEAL} strokeWidth="4" strokeLinecap="round" opacity="0.25" />
+      {/* The end of the line. */}
+      <Path d="M268 64 C 256 50, 252 42, 252 34 A 16 16 0 0 1 284 34 C 284 42, 280 50, 268 64 Z" fill={INK} />
+      <Circle cx="268" cy="34" r="6" fill={PINE} />
+
+      {/* "3 colleagues heading your way" */}
+      <Rect x="20" y="282" width="218" height="36" rx="12" fill={INK} />
+      <Circle cx="40" cy="300" r="5" fill="#2E9C6E" />
+      <SvgText x="54" y="305" fontSize="13" fontFamily="Manrope_700Bold" fill={PINE}>
+        3 colleagues heading your way
+      </SvgText>
     </Svg>
   );
 }
 
-/** A route on a map card: pickup, two numbered drop offs, the destination. */
-function RouteArt({ size }: { size: number }) {
+/** One road, the car on it, and your stop lit up beside it. */
+function StopArt({ size }: { size: number }) {
+  const road = 'M-10 250 C 80 250, 110 180, 170 170 S 260 120, 320 96';
   return (
-    <Svg width={size} height={size * 0.87} viewBox="0 0 300 260">
-      <Circle cx="150" cy="128" r="118" fill={color.brandSoft} />
+    <Svg width={size} height={size * 1.13} viewBox="0 0 300 340">
+      <Grid />
+      <Path d={road} stroke={BAND} strokeWidth="26" strokeLinecap="round" fill="none" />
+      <Path d={road} stroke={LIME} strokeWidth="3" strokeDasharray="2 9" strokeLinecap="round" fill="none" />
 
-      <Rect x="44" y="30" width="212" height="200" rx="26" fill={color.surface} stroke={color.line} strokeWidth="2" />
-      {/* Faint streets. */}
-      <Path d="M44 92 H256 M44 168 H256 M110 30 V230 M196 30 V230" stroke={color.line} strokeWidth="6" />
+      {/* Stops you are not getting off at. */}
+      <Circle cx="70" cy="238" r="6" fill={INK} />
+      <Circle cx="268" cy="116" r="6" fill={INK} />
 
-      {/* The road. */}
-      <Path d="M78 200 C 120 200, 104 132, 150 128 S 196 70, 226 62" stroke={MINT} strokeWidth="14" strokeLinecap="round" fill="none" opacity="0.45" />
-      <Path d="M78 200 C 120 200, 104 132, 150 128 S 196 70, 226 62" stroke={TEAL} strokeWidth="6" strokeLinecap="round" fill="none" />
+      {/* The car, seen from above. */}
+      <G transform="translate(120 196) rotate(-30)">
+        <Rect x="-20" y="-11" width="40" height="22" rx="7" fill={INK} />
+        <Rect x="4" y="-7" width="9" height="14" rx="2" fill={PINE} />
+        <Rect x="-14" y="-7" width="8" height="14" rx="2" fill={PINE} opacity="0.6" />
+      </G>
 
-      {/* Pickup. */}
-      <Circle cx="78" cy="200" r="10" fill={color.surface} stroke={TEAL} strokeWidth="5" />
+      {/* Your stop. */}
+      <Circle cx="196" cy="156" r="26" fill={LIME} opacity="0.16" />
+      <Circle cx="196" cy="156" r="11" fill={LIME} stroke={NIGHT} strokeWidth="4" />
+      <Rect x="150" y="96" width="92" height="32" rx="10" fill={LIME} />
+      <SvgText x="196" y="117" fontSize="13" fontFamily="Manrope_800ExtraBold" fill={PINE} textAnchor="middle">
+        Your stop
+      </SvgText>
 
-      {/* Numbered drop offs. */}
-      <Circle cx="124" cy="150" r="14" fill={MINT} stroke={color.surface} strokeWidth="3" />
-      <SvgText x="124" y="155" fontSize="14" fontWeight="bold" fill={TEAL} textAnchor="middle">
+      {/* The order the driver sees. */}
+      <Rect x="20" y="262" width="260" height="56" rx="14" fill={CARD} stroke={GRID} strokeWidth="1.5" />
+      <Circle cx="44" cy="290" r="11" fill={LIME} />
+      <SvgText x="44" y="295" fontSize="12" fontFamily="Manrope_800ExtraBold" fill={PINE} textAnchor="middle">
         1
       </SvgText>
-      <Circle cx="186" cy="96" r="14" fill={MINT} stroke={color.surface} strokeWidth="3" />
-      <SvgText x="186" y="101" fontSize="14" fontWeight="bold" fill={TEAL} textAnchor="middle">
-        2
+      <SvgText x="64" y="295" fontSize="13" fontFamily="Manrope_700Bold" fill={INK}>
+        First drop off on the road
       </SvgText>
-
-      {/* Destination pin. */}
-      <Path d="M226 70 C 214 56, 212 50, 212 44 A 14 14 0 0 1 240 44 C 240 50, 238 56, 226 70 Z" fill={TEAL} />
-      <Circle cx="226" cy="44" r="5" fill={MINT} />
-
-      {/* A small car on the road, seen from above. */}
-      <G transform="translate(150 128) rotate(-28)">
-        <Rect x="-15" y="-9" width="30" height="18" rx="6" fill={TEAL} />
-        <Rect x="3" y="-6" width="7" height="12" rx="2" fill={MINT} />
-        <Rect x="-11" y="-6" width="6" height="12" rx="2" fill={MINT} opacity="0.6" />
-      </G>
     </Svg>
   );
 }
 
-/** A shield with a tick, colleagues around it, and a work email envelope. */
+/** A shield with a tick, colleagues around it, and the work email that proves it. */
 function TrustArt({ size }: { size: number }) {
   const people = [
-    { x: 64, y: 82, bg: '#FFD8C2', fg: '#8A3B12', t: 'AO' },
-    { x: 238, y: 100, bg: '#D9D3FF', fg: '#3B2E8A', t: 'TK' },
-    { x: 78, y: 196, bg: MINT, fg: TEAL, t: 'IB' },
+    { x: 62, y: 100, bg: LIME, fg: PINE, t: 'AO' },
+    { x: 238, y: 120, bg: '#DCE7F7', fg: '#1D4F91', t: 'TK' },
+    { x: 70, y: 230, bg: '#F8E3EC', fg: '#9D1B5A', t: 'IB' },
   ];
   return (
-    <Svg width={size} height={size * 0.87} viewBox="0 0 300 260">
-      <Circle cx="150" cy="128" r="118" fill={color.brandSoft} />
+    <Svg width={size} height={size * 1.13} viewBox="0 0 300 340">
+      <Grid />
 
-      {/* Dashed orbit linking everyone. */}
-      <Circle cx="150" cy="134" r="92" stroke={TEAL} strokeWidth="2" strokeDasharray="6 8" fill="none" opacity="0.35" />
+      {/* Dashed ring linking everyone. */}
+      <Circle cx="150" cy="166" r="98" stroke={LIME} strokeWidth="2" strokeDasharray="4 9" fill="none" opacity="0.4" />
 
       {/* Shield. */}
-      <Path d="M150 46 L206 66 V122 C 206 160, 182 188, 150 204 C 118 188, 94 160, 94 122 V66 Z" fill={TEAL} />
-      <Path d="M126 126 L144 144 L176 108" stroke={MINT} strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Path d="M150 74 L206 94 V150 C 206 188, 182 216, 150 232 C 118 216, 94 188, 94 150 V94 Z" fill="#1F5A45" />
+      <Path d="M126 154 L144 172 L176 136" stroke={LIME} strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" fill="none" />
 
       {people.map((p) => (
         <G key={p.t}>
-          <Circle cx={p.x} cy={p.y} r="22" fill={p.bg} stroke={color.surface} strokeWidth="4" />
-          <SvgText x={p.x} y={p.y + 5} fontSize="14" fontWeight="bold" fill={p.fg} textAnchor="middle">
+          <Rect x={p.x - 22} y={p.y - 22} width="44" height="44" rx="13" fill={p.bg} />
+          <SvgText x={p.x} y={p.y + 5} fontSize="14" fontFamily="Manrope_800ExtraBold" fill={p.fg} textAnchor="middle">
             {p.t}
           </SvgText>
         </G>
       ))}
 
-      {/* Work email envelope with a tick. */}
-      <G transform="translate(196 176)">
-        <Rect x="0" y="0" width="58" height="40" rx="8" fill={color.surface} stroke={TEAL} strokeWidth="3" />
-        <Path d="M4 6 L29 24 L54 6" stroke={TEAL} strokeWidth="3" fill="none" strokeLinejoin="round" />
-        <Circle cx="56" cy="2" r="11" fill={MINT} stroke={color.surface} strokeWidth="3" />
-        <Path d="M51 2 L55 6 L61 -2" stroke={TEAL} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      {/* Work email with a tick. */}
+      <G transform="translate(196 222)">
+        <Rect x="0" y="0" width="60" height="42" rx="9" fill={INK} />
+        <Path d="M6 8 L30 26 L54 8" stroke={PINE} strokeWidth="3" fill="none" strokeLinejoin="round" />
+        <Circle cx="58" cy="2" r="12" fill={LIME} stroke={NIGHT} strokeWidth="3" />
+        <Path d="M52 2 L56 6 L63 -2" stroke={PINE} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
       </G>
+
+      <SvgText x="150" y="312" fontSize="13" fontFamily="Manrope_700Bold" fill={MUTED} textAnchor="middle">
+        Checked every 60 days
+      </SvgText>
     </Svg>
   );
 }
 
 const s = themed(() =>
   StyleSheet.create({
-    screen: { flex: 1, backgroundColor: color.bg },
+    screen: { flex: 1, backgroundColor: NIGHT },
     flex: { flex: 1 },
-    bold: { fontWeight: '700' },
-    pressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
+    pressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
     top: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -311,11 +352,14 @@ const s = themed(() =>
       paddingTop: space.md,
       height: 52,
     },
-    count: { fontWeight: '600', letterSpacing: 1 },
+    count: { color: FAINT, fontWeight: '800', letterSpacing: 1.5 },
+    skip: { color: MUTED, fontWeight: '700' },
     slide: { flex: 1, paddingHorizontal: space.xl, justifyContent: 'center' },
-    art: { alignItems: 'center', marginBottom: space.xxl },
-    title: { marginBottom: space.md },
-    body: { fontSize: 17, lineHeight: 25 },
+    art: { alignItems: 'center', marginBottom: space.xl },
+    card: { backgroundColor: CARD, borderRadius: 28, overflow: 'hidden' },
+    title: { color: INK, marginBottom: space.md },
+    hi: { color: LIME },
+    body: { color: MUTED, fontSize: 16, lineHeight: 24 },
     bottom: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -326,16 +370,17 @@ const s = themed(() =>
       gap: space.lg,
     },
     dots: { flexDirection: 'row', gap: 6 },
-    dot: { height: 8, borderRadius: 4, backgroundColor: color.brand },
+    dot: { height: 6, borderRadius: 3, backgroundColor: LIME },
     button: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: space.sm,
-      backgroundColor: color.brand,
-      borderRadius: radius.pill,
+      backgroundColor: LIME,
+      borderRadius: radius.lg,
       paddingHorizontal: space.xl,
       paddingVertical: space.lg,
     },
+    buttonText: { color: PINE },
     buttonWide: { paddingHorizontal: space.xxl },
   })
 );

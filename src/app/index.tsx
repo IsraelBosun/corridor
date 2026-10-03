@@ -8,9 +8,10 @@ import { useSession } from '@/data/session';
 import { seatsOpen, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { demoNow, hhmm, untilText } from '@/lib/time';
+import { useReminders } from '@/lib/reminders';
 import { peekReturnTo, takeReturnTo } from '@/theme/theme';
-import { color, elevation, GUTTER, radius, space, themed } from '@/theme/tokens';
-import { AlertIcon, ChatIcon, PinIcon } from '@/ui/icons';
+import { color, GUTTER, LIME, radius, space, themed } from '@/theme/tokens';
+import { AlertIcon, ChatIcon, ChevronIcon, PinIcon, PlusIcon } from '@/ui/icons';
 import { Avatar, Button, SectionTitle } from '@/ui/primitives';
 import { BottomSheet } from '@/ui/sheet';
 import { Text } from '@/ui/text';
@@ -42,13 +43,14 @@ export default function HomeScreen() {
   }, [router]);
   const { height } = useWindowDimensions();
   const { role } = useStore();
+  useReminders(role);
 
   // On the way back to Account, a plain page for the one frame this shows,
   // rather than the whole map mounting and flashing past.
   if (returning) return <View style={s.screen} />;
 
-  const topBar = insets.top + 64;
-  const collapsed = Math.round(height * 0.44);
+  const topBar = insets.top + 72;
+  const collapsed = Math.round(height * 0.5);
   const expanded = height - topBar - space.sm;
   const layout = { topBar, collapsed, expanded, insetTop: insets.top };
 
@@ -87,23 +89,24 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
           accessibilityRole="button"
           accessibilityLabel="Where you get off"
           style={({ pressed }) => [s.search, pressed && s.pressed]}>
-          <PinIcon tint={dropOff ? color.accent : color.inkMuted} />
+          <PinIcon size={18} tint={LIME} />
           <View style={s.flex}>
             {dropOff ? (
               <>
-                <Text variant="small" tone="muted" style={s.searchLabel}>
+                <Text variant="kicker" style={s.searchLabel}>
                   Getting off at
                 </Text>
-                <Text variant="body" numberOfLines={1} style={s.searchValue}>
+                <Text variant="heading" numberOfLines={1} style={s.searchValue}>
                   {dropOffName}
                 </Text>
               </>
             ) : (
-              <Text variant="body" tone="muted" style={s.searchValue}>
+              <Text variant="body" style={[s.searchValue, s.searchEmpty]}>
                 Where are you getting off?
               </Text>
             )}
           </View>
+          <ChevronIcon size={18} tint={NIGHT_FAINT} />
         </Pressable>
       </TopBar>
 
@@ -115,25 +118,23 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
             <SheetTitle
               title={
                 mySeat.status === 'cancelled'
-                  ? 'Your ride was cancelled'
+                  ? 'Ride cancelled'
                   : mySeat.status === 'left'
                     ? 'On your way'
-                    : 'Your ride'
+                    : 'Your ride home'
               }
             />
           ) : (
-            <View>
-              <Text variant="title">Rides tonight</Text>
-              <Text variant="small" tone="brand" style={s.link}>
-                {loading
+            <SheetTitle
+              title="Rides home"
+              aside={
+                loading
                   ? 'Loading'
                   : dropOff
-                    ? passing.length === 1
-                      ? `1 ride passes ${dropOffName}`
-                      : `${passing.length} rides pass ${dropOffName}`
-                    : `${open.length} posted so far`}
-              </Text>
-            </View>
+                    ? `${passing.length} ${passing.length === 1 ? 'passes' : 'pass'} ${dropOffName}`
+                    : `${open.length} posted so far`
+              }
+            />
           )
         }>
         <LoadError />
@@ -174,9 +175,9 @@ function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
 
       <TopBar insetTop={insetTop}>
         <View style={s.status}>
-          <View style={[s.statusDot, myTrip ? s.statusLive : null]} />
-          <Text variant="body" style={s.searchValue}>
-            {myTrip ? 'Your ride is posted' : onTheWay ? 'On the way' : 'Not posted tonight'}
+          <View style={[s.statusDot, myTrip || onTheWay ? s.statusLive : null]} />
+          <Text variant="small" style={s.statusText}>
+            {myTrip ? 'Your ride is live' : onTheWay ? 'On the way' : 'Not posted tonight'}
           </Text>
         </View>
       </TopBar>
@@ -186,7 +187,7 @@ function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
         expanded={expanded}
         header={
           <SheetTitle
-            title={myTrip ? 'You are driving tonight' : onTheWay ? 'Have a good drive' : 'Driving tonight?'}
+            title={myTrip ? "You're driving" : onTheWay ? 'Have a good drive' : 'Driving tonight?'}
           />
         }>
         <LoadError />
@@ -232,7 +233,7 @@ function TopBar({ insetTop, children }: { insetTop: number; children: React.Reac
         accessibilityRole="button"
         accessibilityLabel="Your account"
         style={({ pressed }) => [s.me, pressed && s.pressed]}>
-        <Avatar initials={me?.initials ?? '?'} size={44} tone="ink" />
+        <Avatar initials={me?.initials ?? '?'} size={52} tone="me" />
       </Pressable>
       {children}
     </View>
@@ -252,8 +253,25 @@ function LoadError() {
   );
 }
 
-function SheetTitle({ title }: { title: string }) {
-  return <Text variant="title">{title}</Text>;
+/** "Tonight", then the title, with an optional count on the right. */
+function SheetTitle({ title, aside }: { title: string; aside?: string }) {
+  return (
+    <View>
+      <Text variant="kicker" tone="brand">
+        Tonight
+      </Text>
+      <View style={s.titleRow}>
+        <Text variant="title" style={s.flex} numberOfLines={1}>
+          {title}
+        </Text>
+        {aside ? (
+          <Text variant="small" tone="muted" style={s.aside} numberOfLines={1}>
+            {aside}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
 }
 
 function Browse({ passing, others, now }: { passing: Trip[]; others: Trip[]; now: number }) {
@@ -284,8 +302,15 @@ function Browse({ passing, others, now }: { passing: Trip[]; others: Trip[]; now
         </Pressable>
       ) : null}
 
-      {passing.map((t) => (
-        <TripRow key={t.id} trip={t} now={now} onPress={() => open(t.id)} />
+      {passing.map((t, i) => (
+        // The soonest ride gets the button; the rest stay compact.
+        <TripRow
+          key={t.id}
+          trip={t}
+          now={now}
+          cta={i === 0 ? 'Reserve my seat' : undefined}
+          onPress={() => open(t.id)}
+        />
       ))}
 
       {dropOff && passing.length === 0 ? (
@@ -303,6 +328,10 @@ function Browse({ passing, others, now }: { passing: Trip[]; others: Trip[]; now
           ))}
         </>
       ) : null}
+
+      <Text variant="small" tone="muted" center style={s.foot}>
+        Most people book close to when they stand up to leave.
+      </Text>
     </>
   );
 }
@@ -404,40 +433,63 @@ function MyRide({ trip, now }: { trip: Trip; now: number }) {
   );
 }
 
-/** The ride you are offering. Who is coming, and the way to the pickup. */
+/** The ride you are offering. When, who is coming, and the way to the pickup. */
 function MyOffer({ trip, now }: { trip: Trip; now: number }) {
   const router = useRouter();
   const { person } = useStore();
   const left = seatsOpen(trip);
+  const until = untilText(trip.departMin, now);
+  const names = trip.riders.map((r) => person(r).name.split(' ')[0]).join(', ');
+
+  const stats = [
+    { label: 'Leaving', value: hhmm(trip.departMin) },
+    { label: 'Window', value: `±${trip.toleranceMin}m` },
+    // "in about 2 hr 15 min" reads as "2 hr 15" in a tile this size.
+    {
+      label: 'In',
+      value: until.startsWith('in ') ? until.replace(/^in (about )?/, '').replace(/ min$/, '') : 'Now',
+    },
+  ];
 
   return (
     <View style={s.block}>
-      <View>
-        <Text variant="dataLarge">
-          {trip.riders.length} of {trip.seatsTotal} seats taken
-        </Text>
-        <Text variant="small" tone="muted">
-          Leaving {hhmm(trip.departMin)}, give or take {trip.toleranceMin} min, {untilText(trip.departMin, now)}
-        </Text>
+      <View style={s.stats}>
+        {stats.map((st) => (
+          <View key={st.label} style={s.stat}>
+            <Text variant="small" tone="muted">
+              {st.label}
+            </Text>
+            <Text variant="dataLarge" numberOfLines={1} adjustsFontSizeToFit style={s.statValue}>
+              {st.value}
+            </Text>
+          </View>
+        ))}
       </View>
 
-      <View style={s.riders}>
-        {trip.riders.map((r) => (
-          <View key={r} style={s.rider}>
-            <Avatar initials={person(r).initials} size={44} tone={trip.presentAt[r] ? 'go' : 'person'} />
-            <Text variant="small" tone="muted" numberOfLines={1} style={s.riderName}>
-              {person(r).name.split(' ')[0]}
-            </Text>
+      <View style={s.seatCard}>
+        {trip.riders.length === 0 ? (
+          <View style={s.openSeat}>
+            <PlusIcon size={22} tint={color.inkMuted} />
           </View>
-        ))}
-        {Array.from({ length: left }).map((_, i) => (
-          <View key={`open-${i}`} style={s.rider}>
-            <View style={s.openSeat} />
-            <Text variant="small" tone="faint" style={s.riderName}>
-              Open
-            </Text>
+        ) : (
+          <View style={s.riders}>
+            {trip.riders.map((r) => (
+              <Avatar key={r} initials={person(r).initials} size={44} tone={trip.presentAt[r] ? 'go' : 'person'} />
+            ))}
           </View>
-        ))}
+        )}
+        <View style={s.flex}>
+          <Text variant="heading">
+            {trip.riders.length} of {trip.seatsTotal} {trip.seatsTotal === 1 ? 'seat' : 'seats'} taken
+          </Text>
+          <Text variant="small" tone="muted" numberOfLines={2}>
+            {trip.riders.length === 0
+              ? "You'll get a ping when someone books."
+              : left === 0
+                ? `Full. ${names}`
+                : names}
+          </Text>
+        </View>
       </View>
 
       <Button
@@ -461,6 +513,12 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
   );
 }
 
+/* The top bar sits on the night map in both themes, so it has its own colours. */
+const NIGHT_INK = '#F5F5F2';
+const NIGHT_FAINT = '#93A39A';
+const NIGHT_GLASS = 'rgba(20,38,31,0.92)';
+const NIGHT_EDGE = 'rgba(255,255,255,0.12)';
+
 const s = themed(() =>
   StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.bg },
@@ -476,33 +534,58 @@ const s = themed(() =>
     gap: space.sm,
     paddingHorizontal: GUTTER - 4,
   },
-  me: { borderRadius: 22, ...elevation },
+  me: { borderRadius: 16 },
   search: {
     flex: 1,
     minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    backgroundColor: color.surface,
-    borderRadius: radius.pill,
+    backgroundColor: NIGHT_GLASS,
+    borderWidth: 1,
+    borderColor: NIGHT_EDGE,
+    borderRadius: radius.lg,
     paddingHorizontal: space.lg,
     paddingVertical: 6,
-    ...elevation,
   },
-  searchLabel: { fontSize: 12, lineHeight: 15 },
-  searchValue: { fontWeight: '600' },
+  searchLabel: { color: NIGHT_FAINT, fontSize: 10, lineHeight: 13 },
+  searchValue: { color: NIGHT_INK },
+  searchEmpty: { color: NIGHT_FAINT, fontWeight: '600' },
   status: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
     minHeight: 44,
-    backgroundColor: color.surface,
+    backgroundColor: NIGHT_GLASS,
+    borderWidth: 1,
+    borderColor: NIGHT_EDGE,
     borderRadius: radius.pill,
     paddingHorizontal: space.lg,
-    ...elevation,
   },
-  statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: color.accent },
-  statusLive: { backgroundColor: color.go },
+  statusText: { color: NIGHT_INK, fontWeight: '700' },
+  statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: NIGHT_FAINT },
+  statusLive: { backgroundColor: LIME },
+  titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
+  aside: { fontWeight: '600', maxWidth: '45%' },
+  foot: { marginTop: space.sm, marginBottom: space.md },
+  stats: { flexDirection: 'row', gap: space.sm },
+  stat: {
+    flex: 1,
+    backgroundColor: color.surface,
+    borderRadius: radius.lg,
+    paddingHorizontal: space.md,
+    paddingVertical: space.md,
+    gap: 2,
+  },
+  statValue: { fontSize: 22, lineHeight: 27 },
+  seatCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    backgroundColor: color.surface,
+    borderRadius: radius.xl,
+    padding: space.lg,
+  },
   error: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -553,23 +636,24 @@ const s = themed(() =>
     borderWidth: 3,
     borderColor: color.brand,
   },
-  riders: { flexDirection: 'row', flexWrap: 'wrap', gap: space.lg, paddingVertical: space.sm },
-  rider: { alignItems: 'center', width: 56, gap: 4 },
-  riderName: { fontSize: 12 },
+  riders: { flexDirection: 'row', gap: space.xs },
   openSeat: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: color.lineStrong,
+    borderColor: color.inkFaint,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pair: { flexDirection: 'row', gap: space.sm },
   iconButton: {
-    width: 54,
-    height: 54,
+    width: 56,
+    height: 56,
     borderRadius: radius.lg,
-    backgroundColor: color.brandSoft,
+    borderWidth: 1.5,
+    borderColor: color.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },

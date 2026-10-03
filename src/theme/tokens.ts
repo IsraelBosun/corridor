@@ -1,10 +1,11 @@
 /**
  * Design tokens.
  *
- * Deep teal and mint, from the logo, on a lot of white. Two rules the palette
- * enforces on its own: green is only ever "confirmed", red is only ever
- * "cancelled". Mint is the brand, so "confirmed" is a deeper, plainer green
- * and always comes with words or a tick, never colour alone.
+ * Pine and lime on a warm off-white, with the map always at night. Pine is the
+ * brand: headers, selection, the shield. Lime is the one loud thing on a
+ * screen, the main action and the route, with pine text on it. Two rules the
+ * palette still enforces: green is only ever "confirmed", red is only ever
+ * "cancelled", and neither is carried by colour alone.
  *
  * Light and dark are two palettes with the same keys. `color` is the live one:
  * the theme provider copies the right palette into it, and style sheets built
@@ -12,87 +13,92 @@
  */
 import { Platform, StyleSheet } from 'react-native';
 
-export const TEAL = '#0E3B43';
-export const MINT = '#7FE0C4';
+export const PINE = '#123B2F';
+export const LIME = '#C8E86B';
+/** The night the map and the intro sit in. */
+export const NIGHT = '#0D1814';
 
 const light = {
-  /** Lots of white. Screens and the map sheet. */
-  bg: '#FFFFFF',
-  /** Cards and inputs, told apart from the page by a hairline. */
+  /** Warm off-white. Screens and the map sheet. */
+  bg: '#F5F5F2',
+  /** Cards and inputs, white on the off-white page. */
   surface: '#FFFFFF',
-  /** Grouped rows, search fields, idle chips. */
-  sunken: '#F1F6F5',
+  /** Segmented controls, quiet buttons, the strip inside a card. */
+  sunken: '#E9ECE8',
 
-  /** Text. The logo teal, darkened a touch so long lines stay easy to read. */
-  ink: '#0B2B31',
-  inkMuted: '#4D6A6E',
-  inkFaint: '#8EA5A7',
+  ink: '#15211C',
+  inkMuted: '#5D6A63',
+  inkFaint: '#949F98',
 
-  line: '#E2ECEA',
-  lineStrong: '#C3D6D3',
+  line: '#E3E6E1',
+  lineStrong: '#C9D0CA',
 
-  /** The brand. Primary buttons, selection, the route. */
-  brand: TEAL,
-  brandSoft: '#E5F8F2',
-  brandInk: TEAL,
-  /** The strip behind the system status bar. */
-  brandDeep: TEAL,
+  /** The brand. Headers, selection, outlined buttons. */
+  brand: PINE,
+  brandSoft: '#E1EBE5',
+  /** Pine as text: links, eyebrows, small labels. A touch lighter to read. */
+  brandInk: '#1D5A45',
+  /** The strip behind the system status bar, unless a screen asks otherwise. */
+  brandDeep: NIGHT,
 
-  /** Mint. Highlights, the "your stop" marker, gentle nudges. */
-  accent: MINT,
-  accentSoft: '#E5F8F2',
-  accentInk: '#0A6E57',
+  /** Lime. The main action, the route, "your stop". */
+  accent: LIME,
+  accentSoft: '#EAF5C7',
+  accentInk: '#3D5A12',
+  /** Text and icons on lime, in both themes. */
+  onAccent: '#13241C',
 
   /** Confirmed, and nothing else. */
-  go: '#15803D',
-  goSoft: '#DCFCE7',
+  go: '#16803F',
+  goSoft: '#DCF3E3',
 
   /** Cancelled, and nothing else. */
-  stop: '#DC2626',
-  stopSoft: '#FEE2E2',
+  stop: '#C2392B',
+  stopSoft: '#FBE4E0',
 
   /** Text and icons on a brand fill. */
   onInk: '#FFFFFF',
 
-  shadow: TEAL,
+  shadow: '#0F2A20',
   /** Land colour of the map style, so a tile still loading looks like map. */
-  mapBg: '#F3EFE8',
+  mapBg: '#F2F2EF',
 };
 
 export type Palette = typeof light;
 
 const dark: Palette = {
-  bg: '#061A1E',
-  surface: '#0C2A30',
-  sunken: '#113740',
+  bg: '#0E1512',
+  surface: '#17211D',
+  sunken: '#202C27',
 
-  ink: '#E8F5F2',
-  inkMuted: '#9BB8B5',
-  inkFaint: '#6B8A88',
+  ink: '#EDF2EE',
+  inkMuted: '#A2AFA8',
+  inkFaint: '#6D7B74',
 
-  line: '#173F47',
-  lineStrong: '#265A63',
+  line: '#24312C',
+  lineStrong: '#35443D',
 
-  // On a dark page the mint carries the brand, with teal text on it.
-  brand: MINT,
-  brandSoft: '#123F3A',
-  brandInk: MINT,
-  brandDeep: TEAL,
+  // On a dark page lime carries the brand, with pine text on it.
+  brand: LIME,
+  brandSoft: '#1E2E25',
+  brandInk: LIME,
+  brandDeep: NIGHT,
 
-  accent: MINT,
-  accentSoft: '#123F3A',
-  accentInk: MINT,
+  accent: LIME,
+  accentSoft: '#2A3A1C',
+  accentInk: LIME,
+  onAccent: '#13241C',
 
   go: '#4ADE80',
-  goSoft: '#123D27',
+  goSoft: '#143A24',
 
-  stop: '#F87171',
-  stopSoft: '#3D1717',
+  stop: '#F2766A',
+  stopSoft: '#3D1915',
 
-  onInk: TEAL,
+  onInk: '#13241C',
 
   shadow: '#000000',
-  mapBg: '#1F2A2E',
+  mapBg: '#1B2421',
 };
 
 export type Scheme = 'light' | 'dark';
@@ -131,23 +137,24 @@ export function themed<T extends StyleSheet.NamedStyles<T>>(make: () => T): T {
 
 /**
  * Avatar colours, one per person, picked from their initials so the same
- * colleague is always the same colour. Green and red are left out on purpose.
+ * colleague is always the same colour. Pine and lime lead; green and red are
+ * left out on purpose.
  */
 const avatarsLight = [
-  { bg: '#E5F8F2', fg: '#0A6E57' },
-  { bg: '#E0EEFF', fg: '#1D4F91' },
-  { bg: '#FDE7F0', fg: '#9D1B5A' },
-  { bg: '#FFEEDB', fg: '#9A4A00' },
-  { bg: '#FFF6CC', fg: '#7A5A00' },
-  { bg: '#E3F4F8', fg: '#0E5866' },
+  { bg: PINE, fg: LIME },
+  { bg: LIME, fg: PINE },
+  { bg: '#DCE7F7', fg: '#1D4F91' },
+  { bg: '#F8E3EC', fg: '#9D1B5A' },
+  { bg: '#FBE9D6', fg: '#9A4A00' },
+  { bg: '#E1EBE5', fg: '#1D5A45' },
 ];
 const avatarsDark = [
-  { bg: '#123F3A', fg: '#7FE0C4' },
+  { bg: LIME, fg: PINE },
+  { bg: '#24463A', fg: LIME },
   { bg: '#16304F', fg: '#9CC3FF' },
   { bg: '#41162B', fg: '#F7A8CB' },
   { bg: '#41270E', fg: '#FFC48A' },
-  { bg: '#3B3110', fg: '#F5DC7A' },
-  { bg: '#0F3640', fg: '#8FD3E3' },
+  { bg: '#1E2E25', fg: '#B9D7C6' },
 ];
 
 export function avatarPalette() {
@@ -155,50 +162,68 @@ export function avatarPalette() {
 }
 
 /**
- * Archivo throughout: a grotesque with a bit of width to it, which reads as
- * confident at the heavy weights the titles use. Android picks a weight by
- * family name rather than by fontWeight, so each weight is its own family and
- * the Text component chooses one from the weight a style asks for.
+ * Two faces. Bricolage Grotesque for anything meant to be read at a glance
+ * (titles, times, names, buttons) and Manrope for everything read as words.
+ * Android picks a weight by family name rather than by fontWeight, so each
+ * weight is its own family and the Text component chooses one from the weight
+ * a style asks for.
  */
 export const font = {
-  sans: 'Archivo_400Regular',
+  sans: 'Manrope_400Regular',
+  display: 'BricolageGrotesque_700Bold',
   mono: Platform.select({ ios: 'Menlo', default: 'monospace' }) as string,
 } as const;
 
 export const fontByWeight: Record<string, string> = {
-  '400': 'Archivo_400Regular',
-  normal: 'Archivo_400Regular',
-  '500': 'Archivo_500Medium',
-  '600': 'Archivo_600SemiBold',
-  '700': 'Archivo_700Bold',
-  bold: 'Archivo_700Bold',
-  '800': 'Archivo_800ExtraBold',
-  '900': 'Archivo_900Black',
+  '400': 'Manrope_400Regular',
+  normal: 'Manrope_400Regular',
+  '500': 'Manrope_500Medium',
+  '600': 'Manrope_600SemiBold',
+  '700': 'Manrope_700Bold',
+  bold: 'Manrope_700Bold',
+  '800': 'Manrope_800ExtraBold',
+  '900': 'Manrope_800ExtraBold',
+};
+
+export const displayByWeight: Record<string, string> = {
+  '400': 'BricolageGrotesque_500Medium',
+  normal: 'BricolageGrotesque_500Medium',
+  '500': 'BricolageGrotesque_500Medium',
+  '600': 'BricolageGrotesque_600SemiBold',
+  '700': 'BricolageGrotesque_700Bold',
+  bold: 'BricolageGrotesque_700Bold',
+  '800': 'BricolageGrotesque_800ExtraBold',
+  '900': 'BricolageGrotesque_800ExtraBold',
 };
 
 export const type = {
-  display: { fontSize: 32, lineHeight: 38, fontWeight: '800', letterSpacing: -0.9 },
-  title: { fontSize: 25, lineHeight: 31, fontWeight: '800', letterSpacing: -0.6 },
+  display: { fontSize: 36, lineHeight: 40, fontWeight: '800', letterSpacing: -1.2 },
+  title: { fontSize: 28, lineHeight: 33, fontWeight: '800', letterSpacing: -0.8 },
   heading: { fontSize: 17, lineHeight: 22, fontWeight: '700', letterSpacing: -0.2 },
-  body: { fontSize: 16, lineHeight: 22, fontWeight: '400' },
-  small: { fontSize: 14, lineHeight: 19, fontWeight: '400' },
-  /** Section labels. Small and quiet, no longer shouted in capitals. */
-  eyebrow: { fontSize: 13, lineHeight: 18, fontWeight: '600', letterSpacing: 0.1 },
-  data: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
-  dataLarge: { fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.4 },
+  body: { fontSize: 16, lineHeight: 22, fontWeight: '500' },
+  small: { fontSize: 14, lineHeight: 19, fontWeight: '500' },
+  /** Field labels: small, firm, sentence case. */
+  eyebrow: { fontSize: 13, lineHeight: 18, fontWeight: '700' },
+  /** Section labels and kickers: small capitals, spaced out. */
+  kicker: { fontSize: 12, lineHeight: 16, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase' },
+  data: { fontSize: 16, lineHeight: 22, fontWeight: '700' },
+  dataLarge: { fontSize: 24, lineHeight: 29, fontWeight: '800', letterSpacing: -0.5 },
 } as const;
+
+/** Variants set in the display face. Everything else is Manrope. */
+export const DISPLAY_VARIANTS = new Set<keyof typeof type>(['display', 'title', 'heading', 'dataLarge']);
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, huge: 48 } as const;
 
-export const radius = { sm: 8, md: 12, lg: 14, xl: 20, pill: 999 } as const;
+export const radius = { sm: 8, md: 12, lg: 16, xl: 24, pill: 999 } as const;
 
 /** Screens keep a single consistent side gutter. */
 export const GUTTER = 20;
 
 /** Floating things over the map: search pill, round buttons, the sheet. */
 export const elevation = {
-  shadowColor: TEAL,
-  shadowOpacity: 0.14,
+  shadowColor: '#0F2A20',
+  shadowOpacity: 0.12,
   shadowRadius: 12,
   shadowOffset: { width: 0, height: 4 },
   elevation: 5,

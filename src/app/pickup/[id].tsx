@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { demoNow, hhmm, untilText } from '@/lib/time';
-import { color, radius, space, TEAL, themed } from '@/theme/tokens';
+import { color, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { Avatar, Button, Callout, Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
 import { Text } from '@/ui/text';
@@ -253,7 +253,7 @@ const s = themed(() =>
   checkOn: { backgroundColor: color.go, borderColor: color.go },
   open: { paddingVertical: space.md },
   map: { borderRadius: radius.xl, overflow: 'hidden', marginTop: space.sm, marginBottom: space.sm },
-  // The same mint badge as the marker on the map, so 2 here is 2 there.
+  // The same lime badge as the marker on the map, so 2 here is 2 there.
   num: {
     width: 26,
     height: 26,
@@ -262,6 +262,6 @@ const s = themed(() =>
     alignItems: 'center',
     justifyContent: 'center',
   },
-  numText: { color: TEAL, fontWeight: '800', fontSize: 12, lineHeight: 15 },
+  numText: { color: color.onAccent, fontWeight: '800', fontSize: 12, lineHeight: 15 },
   })
 );

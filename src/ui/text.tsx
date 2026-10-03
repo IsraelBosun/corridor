@@ -1,6 +1,6 @@
 import { StyleSheet, Text as RNText, type TextProps, type TextStyle } from 'react-native';
 
-import { color, font, fontByWeight, type Palette, type } from '@/theme/tokens';
+import { color, DISPLAY_VARIANTS, displayByWeight, font, fontByWeight, type Palette, type } from '@/theme/tokens';
 
 type Variant = keyof typeof type;
 
@@ -8,7 +8,9 @@ type Props = TextProps & {
   variant?: Variant;
   /** Monospace. Opt in only, for codes read out character by character. */
   mono?: boolean;
-  tone?: 'ink' | 'muted' | 'faint' | 'accent' | 'brand' | 'go' | 'stop' | 'onInk';
+  /** Force the display face (Bricolage) on a variant that is normally Manrope, or off with false. */
+  display?: boolean;
+  tone?: 'ink' | 'muted' | 'faint' | 'accent' | 'brand' | 'go' | 'stop' | 'onInk' | 'onAccent';
   center?: boolean;
 };
 
@@ -23,11 +25,13 @@ const TONE: Record<NonNullable<Props['tone']>, keyof Palette> = {
   go: 'go',
   stop: 'stop',
   onInk: 'onInk',
+  onAccent: 'onAccent',
 };
 
 export function Text({
   variant = 'body',
   mono,
+  display,
   tone = 'ink',
   center,
   style,
@@ -37,11 +41,12 @@ export function Text({
   // Numbers line up in columns without switching to a monospace face.
   const isData = variant === 'data' || variant === 'dataLarge';
 
-  // Archivo ships one file per weight, and Android only honours a weight by
+  // Both faces ship one file per weight, and Android only honours a weight by
   // its family name. Take whatever weight the styles settle on and swap in
   // that family, rather than letting Android fake a bold over the regular.
   const flat = StyleSheet.flatten([base, style]) ?? {};
-  const family = mono ? font.mono : (fontByWeight[String(flat.fontWeight ?? '400')] ?? font.sans);
+  const weights = (display ?? DISPLAY_VARIANTS.has(variant)) ? displayByWeight : fontByWeight;
+  const family = mono ? font.mono : (weights[String(flat.fontWeight ?? '400')] ?? font.sans);
 
   return (
     <RNText
