@@ -22,6 +22,7 @@ import { StoreProvider } from '@/data/store';
 import { backendReady } from '@/data/backend';
 import { justSwitchedTheme, ThemeProvider } from '@/theme/theme';
 import { color, space, themed } from '@/theme/tokens';
+import { OtaUpdates } from '@/lib/updates';
 import { DialogHost } from '@/ui/dialog';
 import { StatusBand } from '@/ui/status-band';
 import { Text } from '@/ui/text';
@@ -71,6 +72,7 @@ export default function RootLayout() {
               <Gate scheme={scheme} />
               <StatusBand />
               <DialogHost />
+              <OtaUpdates />
             </SessionProvider>
           </GestureHandlerRootView>
         )

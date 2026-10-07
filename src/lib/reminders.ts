@@ -8,8 +8,13 @@
  * These are local notifications, scheduled on the phone itself. Nothing goes
  * through a server, they arrive with no signal, and turning them off in
  * Account cancels them on the spot. The choice is kept on this phone.
+ *
+ * Expo Go on Android throws as soon as expo-notifications is imported (SDK 53
+ * took it out), so the module is loaded only in a real build. In Expo Go the
+ * app runs without reminders rather than not at all.
  */
-import * as Notifications from 'expo-notifications';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import type * as NotificationsModule from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
@@ -24,15 +29,33 @@ const HOUR = 15;
 /** Monday to Friday, in the trigger's numbering where 1 is Sunday. */
 const WEEKDAYS = [2, 3, 4, 5, 6];
 
-// A reminder that arrives while the app is open still shows as a banner.
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+/** True in Expo Go, where notifications cannot be used. */
+export const REMINDERS_UNAVAILABLE = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+let loaded: typeof NotificationsModule | null | undefined;
+
+/** expo-notifications, or null where it cannot run. Loaded on first use. */
+function notifications(): typeof NotificationsModule | null {
+  if (loaded !== undefined) return loaded;
+  if (REMINDERS_UNAVAILABLE) return (loaded = null);
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod: typeof NotificationsModule = require('expo-notifications');
+    // A reminder that arrives while the app is open still shows as a banner.
+    mod.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+    loaded = mod;
+  } catch {
+    loaded = null;
+  }
+  return loaded;
+}
 
 const COPY: Record<Role, { title: string; body: string; url: string }> = {
   driver: {
@@ -62,16 +85,16 @@ export async function setRemindersOn(on: boolean): Promise<void> {
   });
 }
 
-async function cancelOurs() {
-  const all = await Notifications.getAllScheduledNotificationsAsync();
+async function cancelOurs(N: typeof NotificationsModule) {
+  const all = await N.getAllScheduledNotificationsAsync();
   await Promise.all(
     all
       .filter((n) => n.identifier.startsWith(PREFIX))
-      .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
+      .map((n) => N.cancelScheduledNotificationAsync(n.identifier))
   );
 }
 
-export type SyncResult = 'scheduled' | 'off' | 'denied' | 'failed';
+export type SyncResult = 'scheduled' | 'off' | 'denied' | 'unavailable' | 'failed';
 
 /**
  * Make the phone's schedule match the person: their role's wording, or none
@@ -79,38 +102,40 @@ export type SyncResult = 'scheduled' | 'off' | 'denied' | 'failed';
  * needed; it replaces rather than adds.
  */
 export async function syncReminders(role: Role, askPermission = true): Promise<SyncResult> {
+  const N = notifications();
+  if (!N) return 'unavailable';
   try {
     if (!(await remindersOn())) {
-      await cancelOurs();
+      await cancelOurs(N);
       return 'off';
     }
 
-    let { granted, canAskAgain } = await Notifications.getPermissionsAsync();
+    let { granted, canAskAgain } = await N.getPermissionsAsync();
     if (!granted && canAskAgain && askPermission) {
-      ({ granted } = await Notifications.requestPermissionsAsync());
+      ({ granted } = await N.requestPermissionsAsync());
     }
     if (!granted) {
-      await cancelOurs();
+      await cancelOurs(N);
       return 'denied';
     }
 
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync(CHANNEL, {
+      await N.setNotificationChannelAsync(CHANNEL, {
         name: 'Ride reminders',
         description: 'A nudge at 15:00 on weekdays to post or look for a ride home.',
-        importance: Notifications.AndroidImportance.DEFAULT,
+        importance: N.AndroidImportance.DEFAULT,
       });
     }
 
-    await cancelOurs();
+    await cancelOurs(N);
     const copy = COPY[role];
     await Promise.all(
       WEEKDAYS.map((weekday) =>
-        Notifications.scheduleNotificationAsync({
+        N.scheduleNotificationAsync({
           identifier: `${PREFIX}${weekday}`,
           content: { title: copy.title, body: copy.body, data: { url: copy.url } },
           trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+            type: N.SchedulableTriggerInputTypes.WEEKLY,
             channelId: CHANNEL,
             weekday,
             hour: HOUR,
@@ -126,7 +151,7 @@ export async function syncReminders(role: Role, askPermission = true): Promise<S
 }
 
 /** Where a tapped reminder should open, if it is one of ours. */
-export function reminderUrl(response: Notifications.NotificationResponse | null): string | null {
+function reminderUrl(response: NotificationsModule.NotificationResponse | null): string | null {
   if (!response) return null;
   if (!response.notification.request.identifier.startsWith(PREFIX)) return null;
   const url = response.notification.request.content.data?.url;
@@ -137,21 +162,31 @@ const handled = new Set<string>();
 
 /**
  * Keeps the schedule in step with the person's role, and opens the right
- * screen when a reminder is tapped. Mounted once, on the home screen.
+ * screen when a reminder is tapped, whether that tap opened the app or
+ * arrived while it was running. Mounted once, on the home screen.
  */
 export function useReminders(role: Role) {
   const router = useRouter();
-  const last = Notifications.useLastNotificationResponse();
 
   useEffect(() => {
     syncReminders(role);
   }, [role]);
 
   useEffect(() => {
-    const url = reminderUrl(last ?? null);
-    const id = last?.notification.request.identifier + ':' + last?.notification.date;
-    if (!url || handled.has(id)) return;
-    handled.add(id);
-    if (url !== '/') router.push(url as '/post');
-  }, [last, router]);
+    const N = notifications();
+    if (!N) return;
+
+    const open = (response: NotificationsModule.NotificationResponse | null) => {
+      const url = reminderUrl(response);
+      if (!url || !response) return;
+      const id = `${response.notification.request.identifier}:${response.notification.date}`;
+      if (handled.has(id)) return;
+      handled.add(id);
+      if (url !== '/') router.push(url as '/post');
+    };
+
+    N.getLastNotificationResponseAsync().then(open).catch(() => {});
+    const sub = N.addNotificationResponseReceivedListener(open);
+    return () => sub.remove();
+  }, [router]);
 }

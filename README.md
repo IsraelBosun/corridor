@@ -80,6 +80,24 @@ Your local `.env` is uploaded with the build (see `.easignore`), so the APK talk
 
 ---
 
+## Ship an update without a new APK
+
+JavaScript changes (screens, copy, styling, logic) go out over the air with [EAS Update](https://docs.expo.dev/eas-update/introduction/):
+
+```bash
+npx eas-cli update --channel preview --message "What changed"
+```
+
+Installed preview APKs pick it up on their next open or return to the app, download it in the background, and offer a restart. Anyone who says "later" gets it the next time they open the app.
+
+The bundle is built on your machine, so it uses your local `.env`.
+
+Some changes still need a new APK: a new Expo module, a permission, the icon, the splash, or anything else in `app.json`. When you make one, bump `version` in `app.json` before building. Updates only reach builds with the same version (`runtimeVersion` follows it), so an update can never land on an APK whose native side does not match.
+
+The production profile uses the `production` channel the same way.
+
+---
+
 ## Project layout
 
 ```

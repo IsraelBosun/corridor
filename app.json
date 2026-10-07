@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/images/icon.png",
-      "bundleIdentifier": "com.israelbosun.corridor"
+      "bundleIdentifier": "com.bluehydra.corridor"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,7 +20,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "edgeToEdgeEnabled": true,
-      "package": "com.israelbosun.corridor"
+      "package": "com.bluehydra.corridor"
     },
     "web": {
       "output": "static",
@@ -75,6 +75,14 @@
         "projectId": "94813780-bf80-4edd-ae01-43016907188e"
       }
     },
-    "owner": "israelbosun"
+    "owner": "israelbosun",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/94813780-bf80-4edd-ae01-43016907188e",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }

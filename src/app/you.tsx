@@ -5,7 +5,7 @@ import { Linking, Pressable, StyleSheet, Switch, TextInput, View } from 'react-n
 import { USING_LOCAL } from '@/data/backend';
 import { useSession } from '@/data/session';
 import { useStore } from '@/data/store';
-import { remindersOn, setRemindersOn, syncReminders } from '@/lib/reminders';
+import { REMINDERS_UNAVAILABLE, remindersOn, setRemindersOn, syncReminders } from '@/lib/reminders';
 import { useTheme, type ThemeMode } from '@/theme/theme';
 import { color, font, GUTTER, LIME, PINE, radius, space, themed } from '@/theme/tokens';
 import {
@@ -462,7 +462,11 @@ function Reminders({ driver }: { driver: boolean }) {
           accessibilityLabel="Weekday reminder at 15:00"
         />
       </View>
-      {blocked ? (
+      {REMINDERS_UNAVAILABLE ? (
+        <Text variant="small" tone="muted" style={s.cardNote}>
+          Reminders only work in the installed app, not in Expo Go.
+        </Text>
+      ) : blocked ? (
         <Pressable onPress={() => Linking.openSettings()} accessibilityRole="button" style={s.cardNote}>
           <Text variant="small" tone="stop">
             Notifications are off for Corridor on this phone.{' '}
