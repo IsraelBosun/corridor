@@ -5,7 +5,6 @@ import type { Role } from '../types';
 import type {
   AuthSession,
   Backend,
-  LandmarkRow,
   MessageRow,
   ProfileRow,
   TripFields,
@@ -28,15 +27,6 @@ import type {
  */
 
 const DB_NAME = 'corridor-local.db';
-
-/**
- * Same as the migrations leave the hosted table: the pickup and nothing else.
- * The four corridor stops were retired; destinations and drop offs are
- * searched places now.
- */
-const LANDMARKS: LandmarkRow[] = [
-  { id: 'marina', name: 'Access Towers', ord: 0, typical_min: 0, lat: 6.4281, lng: 3.4219 },
-];
 
 const SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -87,6 +77,9 @@ CREATE TABLE IF NOT EXISTS trips (
   destination_name TEXT,
   destination_lat REAL,
   destination_lng REAL,
+  origin_name TEXT,
+  origin_lat REAL,
+  origin_lng REAL,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS trip_stops (
@@ -129,6 +122,9 @@ function db(): Promise<SQLite.SQLiteDatabase> {
         'trips ADD COLUMN destination_name TEXT',
         'trips ADD COLUMN destination_lat REAL',
         'trips ADD COLUMN destination_lng REAL',
+        'trips ADD COLUMN origin_name TEXT',
+        'trips ADD COLUMN origin_lat REAL',
+        'trips ADD COLUMN origin_lng REAL',
         'profiles ADD COLUMN car TEXT',
       ]) {
         try {
@@ -136,12 +132,6 @@ function db(): Promise<SQLite.SQLiteDatabase> {
         } catch {
           // Already added.
         }
-      }
-      for (const l of LANDMARKS) {
-        await d.runAsync(
-          'INSERT OR IGNORE INTO landmarks (id, name, ord, typical_min, lat, lng) VALUES (?, ?, ?, ?, ?, ?)',
-          l.id, l.name, l.ord, l.typical_min, l.lat, l.lng
-        );
       }
       // Retire the old corridor stops on phones that seeded them, the way
       // 20261001130000_retire_corridor_stops.sql does on the server.
@@ -248,13 +238,16 @@ async function liveCommitments(userId: string) {
   return { driving: (driving?.n ?? 0) > 0, riding: (riding?.n ?? 0) > 0 };
 }
 
-function checkFields(f: TripFields, stops: string[]) {
+function checkFields(f: TripFields) {
   if (f.seats_total < 1 || f.seats_total > 4) throw new Error('A ride offers between one and four seats.');
   if (f.tolerance_min < 5 || f.tolerance_min > 90) throw new Error('Give or take has to be between 5 and 90 minutes.');
   if ((f.vehicle ?? '').length > 80) throw new Error('Keep the car description under 80 characters.');
   if ((f.note ?? '').length > 300) throw new Error('Keep the note under 300 characters.');
   if ((f.destination_name ?? '').length > 120) throw new Error('Keep the destination under 120 characters.');
-  if (stops.length < 1) throw new Error('A ride needs a pickup point.');
+  if ((f.origin_name ?? '').length > 120) throw new Error('Keep where you start under 120 characters.');
+  if (!f.origin_name || f.origin_lat === null || f.origin_lng === null) {
+    throw new Error('Say where you are starting from so riders know where to meet you.');
+  }
   if (!f.destination_name || f.destination_lat === null || f.destination_lng === null) {
     throw new Error('Say where you are going so riders can see if you pass them.');
   }
@@ -355,24 +348,17 @@ export const localBackend: Backend = {
     return d.getAllAsync<ProfileRow>('SELECT * FROM profiles');
   },
 
-  async listLandmarks() {
-    const d = await db();
-    return d.getAllAsync<LandmarkRow>('SELECT * FROM landmarks ORDER BY ord');
-  },
-
   async listTrips() {
     const d = await db();
-    const trips = await d.getAllAsync<Omit<TripRow, 'trip_stops' | 'reservations' | 'announce_on_depart'> & { announce_on_depart: number }>(
-      'SELECT id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng FROM trips ORDER BY depart_at'
+    const trips = await d.getAllAsync<Omit<TripRow, 'reservations' | 'announce_on_depart'> & { announce_on_depart: number }>(
+      'SELECT id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng FROM trips ORDER BY depart_at'
     );
-    const stops = await d.getAllAsync<{ trip_id: string; landmark_id: string; ord: number }>('SELECT * FROM trip_stops');
     const res = await d.getAllAsync<{ trip_id: string; rider_id: string; present_at: string | null }>(
       'SELECT trip_id, rider_id, present_at FROM reservations ORDER BY reserved_at'
     );
     return trips.map((t) => ({
       ...t,
       announce_on_depart: t.announce_on_depart === 1,
-      trip_stops: stops.filter((s) => s.trip_id === t.id).map(({ landmark_id, ord }) => ({ landmark_id, ord })),
       reservations: res.filter((r) => r.trip_id === t.id).map(({ rider_id, present_at }) => ({ rider_id, present_at })),
     }));
   },
@@ -382,11 +368,11 @@ export const localBackend: Backend = {
     return () => tripListeners.delete(cb);
   },
 
-  async createTrip(driverId, fields, stops) {
+  async createTrip(driverId, fields) {
     const me = await requireUser();
     if (me !== driverId) throw new Error('You can only post your own ride.');
     if ((await roleOf(me)) !== 'driver') throw new Error('Only drivers can post a ride. Switch to driving in your account.');
-    checkFields(fields, stops);
+    checkFields(fields);
     const d = await db();
     const id = uuid();
     await d.withExclusiveTransactionAsync(async (tx) => {
@@ -398,24 +384,23 @@ export const localBackend: Backend = {
       if ((live?.n ?? 0) > 0) throw new Error('You already have a ride posted tonight. Edit that one instead.');
       await tx.runAsync(
         `INSERT INTO trips (id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, announce_on_depart,
-                            destination_name, destination_lat, destination_lng, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            destination_name, destination_lat, destination_lng,
+                            origin_name, origin_lat, origin_lng, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id, tripCode(), me, fields.depart_at, fields.tolerance_min, fields.seats_total,
         fields.vehicle, fields.note, fields.announce_on_depart ? 1 : 0,
-        fields.destination_name, fields.destination_lat, fields.destination_lng, now()
+        fields.destination_name, fields.destination_lat, fields.destination_lng,
+        fields.origin_name, fields.origin_lat, fields.origin_lng, now()
       );
-      for (let i = 0; i < stops.length; i++) {
-        await tx.runAsync('INSERT INTO trip_stops (trip_id, landmark_id, ord) VALUES (?, ?, ?)', id, stops[i], i);
-      }
     });
     tripsChanged();
     return id;
   },
 
-  async editTrip(tripId, fields, stops) {
+  async editTrip(tripId, fields) {
     const me = await requireUser();
     await ownTrip(tripId, me);
-    checkFields(fields, stops);
+    checkFields(fields);
     const d = await db();
     await d.withExclusiveTransactionAsync(async (tx) => {
       const taken = await tx.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM reservations WHERE trip_id = ?', tripId);
@@ -424,16 +409,14 @@ export const localBackend: Backend = {
       }
       await tx.runAsync(
         `UPDATE trips SET depart_at = ?, tolerance_min = ?, seats_total = ?, vehicle = ?, note = ?, announce_on_depart = ?,
-                          destination_name = ?, destination_lat = ?, destination_lng = ?
+                          destination_name = ?, destination_lat = ?, destination_lng = ?,
+                          origin_name = ?, origin_lat = ?, origin_lng = ?
          WHERE id = ?`,
         fields.depart_at, fields.tolerance_min, fields.seats_total, fields.vehicle, fields.note,
         fields.announce_on_depart ? 1 : 0,
-        fields.destination_name, fields.destination_lat, fields.destination_lng, tripId
+        fields.destination_name, fields.destination_lat, fields.destination_lng,
+        fields.origin_name, fields.origin_lat, fields.origin_lng, tripId
       );
-      await tx.runAsync('DELETE FROM trip_stops WHERE trip_id = ?', tripId);
-      for (let i = 0; i < stops.length; i++) {
-        await tx.runAsync('INSERT INTO trip_stops (trip_id, landmark_id, ord) VALUES (?, ?, ?)', tripId, stops[i], i);
-      }
     });
     tripsChanged();
   },
@@ -611,7 +594,7 @@ export const localTools = {
     tripsChanged();
   },
 
-  /** Every account, ride and message on this phone, gone. The stops stay. */
+  /** Every account, ride and message on this phone, gone. */
   async resetAll(): Promise<void> {
     const d = await db();
     await setSession(null);

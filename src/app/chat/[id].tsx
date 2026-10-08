@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTripChat } from '@/data/chat';
-import { useStore, useTrip } from '@/data/store';
+import { endName, useStore, useTrip } from '@/data/store';
 import { hhmm } from '@/lib/time';
 import { color, font, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ArrowIcon, LockIcon } from '@/ui/icons';
@@ -21,7 +21,7 @@ import { Text } from '@/ui/text';
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { person, me, landmark } = useStore();
+  const { person, me } = useStore();
   const trip = useTrip(id);
   const { messages, loading, error, send, clearError } = useTripChat(id, me?.id);
 
@@ -174,7 +174,7 @@ export default function ChatScreen() {
         </View>
 
         <Text variant="small" tone="faint" style={s.footNote}>
-          Closes when the trip reaches {landmark(trip.stops[trip.stops.length - 1]).name}.
+          Closes when the trip reaches {endName(trip)}.
         </Text>
       </KeyboardAvoidingView>
     </SafeAreaView>

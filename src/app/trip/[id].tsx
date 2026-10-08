@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSession } from '@/data/session';
-import { seatsOpen, useStore, useTrip } from '@/data/store';
+import { endName, seatsOpen, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { demoNow, hhmm, untilText } from '@/lib/time';
 import { color, GUTTER, radius, space, themed } from '@/theme/tokens';
@@ -29,7 +29,6 @@ export default function TripScreen() {
     serves,
     person,
     me,
-    landmark,
     role,
     error,
     clearError,
@@ -60,8 +59,7 @@ export default function TripScreen() {
   const iAmDriving = me ? trip.driverId === me.id && role === 'driver' : false;
   const mine = me ? trip.riders.includes(me.id) : false;
   const present = !!(me && trip.presentAt[me.id]);
-  const pickup = landmark(trip.stops[0]);
-  const last = landmark(trip.stops[trip.stops.length - 1]);
+  const start = startName(trip);
   const passes = dropOff ? serves(trip) : undefined;
 
   async function onReserve() {
@@ -115,7 +113,7 @@ export default function TripScreen() {
     <View style={s.screen}>
       <View style={{ height: mapHeight + 24 }}>
         <TripMap
-          stops={trip.stops}
+          origin={trip.origin}
           destination={trip.destination}
           dropOff={dropOff}
           padding={{ top: insets.top + 56, bottom: 56, left: 40, right: 40 }}
@@ -134,7 +132,7 @@ export default function TripScreen() {
             <>
               <Text variant="title">On the way</Text>
               <Text variant="body" tone="muted" style={s.sub}>
-                Set off from {pickup.name}. It was due at {hhmm(trip.departMin)}.
+                Set off from {start}. It was due at {hhmm(trip.departMin)}.
               </Text>
             </>
           ) : (
@@ -159,11 +157,11 @@ export default function TripScreen() {
 
           {/* The route, as a ride hailing app shows it: from, via, to. */}
           <View style={s.route}>
-            <RouteStop kind="start" title={pickup.name} note="Pickup" />
+            <RouteStop kind="start" title={start} note="Pickup" />
             {passes ? <RouteStop kind="mine" title={dropOffName} note="Where you get off, on the way" /> : null}
             <RouteStop
               kind="end"
-              title={trip.destination?.name ?? last.name}
+              title={endName(trip)}
               note="Where the driver is going"
               last
             />
@@ -239,12 +237,12 @@ export default function TripScreen() {
                 <View style={s.checked}>
                   <CheckIcon />
                   <Text variant="body" tone="go" style={s.bold}>
-                    Checked in at {pickup.name}, {hhmm(trip.presentAt[me!.id])}
+                    Checked in at {start}, {hhmm(trip.presentAt[me!.id])}
                   </Text>
                 </View>
               ) : (
                 <Button
-                  label={`I am at ${pickup.name}`}
+                  label={`I am at ${start}`}
                   kind="go"
                   onPress={() => me && markPresent(trip.id, me.id)}
                 />

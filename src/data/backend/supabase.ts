@@ -9,9 +9,9 @@ import type { AuthSession, Backend, Membership, MessageRow, ProfileRow, TripRow 
 const PROFILE_COLUMNS =
   'id, handle, initials, display_name, team, floor, drop_off_id, drop_off_name, drop_off_lat, drop_off_lng, role, car';
 
-/** Columns, and the two embedded tables, in one round trip. */
+/** Columns, and the reservations, in one round trip. */
 const TRIP_SELECT =
-  'id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, trip_stops(landmark_id, ord), reservations(rider_id, present_at)';
+  'id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, reservations(rider_id, present_at)';
 
 function fail(error: { message: string } | null): void {
   if (error) throw new Error(error.message);
@@ -128,15 +128,6 @@ export const supabaseBackend: Backend = {
     return (data ?? []) as ProfileRow[];
   },
 
-  async listLandmarks() {
-    const { data, error } = await supabase
-      .from('landmarks')
-      .select('id, name, ord, typical_min, lat, lng')
-      .order('ord');
-    fail(error);
-    return data ?? [];
-  },
-
   async listTrips() {
     const { data, error } = await supabase.from('trips').select(TRIP_SELECT).order('depart_at');
     fail(error);
@@ -154,38 +145,18 @@ export const supabaseBackend: Backend = {
     };
   },
 
-  async createTrip(driverId, fields, stops) {
+  async createTrip(driverId, fields) {
     const { data, error } = await supabase
       .from('trips')
       .insert({ driver_id: driverId, ...fields })
       .select('id')
       .single();
     fail(error);
-    const id = (data as { id: string }).id;
-
-    // The stops are a second write. A trip with no stops passes nobody, so if
-    // they fail the trip is taken back out rather than left routeless.
-    const { error: stopsError } = await supabase
-      .from('trip_stops')
-      .insert(stops.map((landmark_id, ord) => ({ trip_id: id, landmark_id, ord })));
-    if (stopsError) {
-      await supabase.from('trips').delete().eq('id', id);
-      throw new Error(`${stopsError.message} The ride was not posted.`);
-    }
-    return id;
+    return (data as { id: string }).id;
   },
 
-  async editTrip(tripId, fields, stops) {
+  async editTrip(tripId, fields) {
     fail((await supabase.from('trips').update(fields).eq('id', tripId)).error);
-    // Replaced wholesale. Five rows at most, and the order is the meaning.
-    fail((await supabase.from('trip_stops').delete().eq('trip_id', tripId)).error);
-    fail(
-      (
-        await supabase
-          .from('trip_stops')
-          .insert(stops.map((landmark_id, ord) => ({ trip_id: tripId, landmark_id, ord })))
-      ).error
-    );
   },
 
   async cancelTrip(tripId) {

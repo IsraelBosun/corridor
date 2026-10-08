@@ -1,11 +1,12 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { useStore } from '@/data/store';
 import type { Destination } from '@/data/types';
 import type { Place } from '@/lib/places';
 import { EVENING_END_MIN, EVENING_START_MIN } from '@/lib/config';
+import { loadLastOrigin, saveLastOrigin } from '@/lib/origin';
 import { hhmm } from '@/lib/time';
 import { color, font, LIME, PINE, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, CarIcon, ChevronIcon, PinIcon } from '@/ui/icons';
@@ -30,7 +31,7 @@ function nextSlot(): number {
 
 export default function PostTripScreen() {
   const router = useRouter();
-  const { postTrip, editTrip, cancelTrip, trips, me, role, dropOff, landmarks, error, clearError } = useStore();
+  const { postTrip, editTrip, cancelTrip, trips, me, role, dropOff, error, clearError } = useStore();
 
   // A driver has one live trip, and the database enforces that. Coming here
   // with one already posted opens it for editing, never a second post.
@@ -54,17 +55,30 @@ export default function PostTripScreen() {
       ? { name: dropOff.name, lat: dropOff.lat, lng: dropOff.lng }
       : undefined;
   const [destination, setDestination] = useState<Destination | undefined>(already?.destination ?? usual);
-  const [searching, setSearching] = useState(false);
+  // Where the ride starts is the driver's to say. A new ride starts from
+  // wherever their last one did, remembered on this phone only.
+  const [origin, setOrigin] = useState<Destination | undefined>(already?.origin);
+  useEffect(() => {
+    if (already?.origin) return;
+    let alive = true;
+    loadLastOrigin().then((last) => {
+      if (alive && last) setOrigin((o) => o ?? last);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [already?.origin]);
+  const [searching, setSearching] = useState<'from' | 'to' | null>(null);
 
-  // A ride is the pickup and where the driver is going. The road between them
-  // comes from Mapbox, and riders are matched against that road.
-  const pickup = landmarks[0];
-  const stops = pickup ? [pickup.id] : [];
-  const routeReady = stops.length > 0 && destination !== undefined;
+  // A ride is where the driver starts and where they are going. The road
+  // between them comes from Mapbox, and riders are matched against that road.
+  const routeReady = origin !== undefined && destination !== undefined;
 
-  function pickDestination(p: Place) {
-    setSearching(false);
-    setDestination({ name: p.name, lat: p.lat, lng: p.lng });
+  function pick(p: Place) {
+    const place = { name: p.name, lat: p.lat, lng: p.lng };
+    if (searching === 'from') setOrigin(place);
+    else setDestination(place);
+    setSearching(null);
   }
 
   function close() {
@@ -78,7 +92,7 @@ export default function PostTripScreen() {
     setPosting(true);
     clearError();
     const draft = {
-      stops,
+      origin,
       departMin,
       toleranceMin,
       seatsTotal: seats,
@@ -91,6 +105,7 @@ export default function PostTripScreen() {
     // update, never a second row.
     const ok = already ? await editTrip(already.id, draft) : Boolean(await postTrip(draft));
     setPosting(false);
+    if (ok && origin) saveLastOrigin(origin);
     // A failed post leaves the form as it was, with the reason on screen.
     if (ok) close();
   }
@@ -149,22 +164,42 @@ export default function PostTripScreen() {
       ) : null}
 
       {/*
-        Always shown. Before a destination is picked it sits on the pickup, so
-        the driver sees where the ride starts; picking one draws the road.
+        Always shown. Before anything is picked it sits on the phone's own
+        position; picking both ends draws the road.
       */}
       <View style={s.map}>
-        <TripMap stops={stops} destination={destination} padding={{ top: 40, bottom: 24, left: 36, right: 36 }} />
+        <TripMap origin={origin} destination={destination} padding={{ top: 40, bottom: 24, left: 36, right: 36 }} />
       </View>
 
+      <Field label="Starting from" hint="Riders meet you here. Be as exact as the gate or the car park.">
+        <Pressable
+          onPress={() => setSearching('from')}
+          accessibilityRole="button"
+          accessibilityLabel="Where are you starting from"
+          style={({ pressed }) => [s.dest, pressed && s.pressed]}>
+          <View style={[s.destPin, s.fromPin]}>
+            <View style={s.fromDot} />
+          </View>
+          <Text
+            variant={origin ? 'heading' : 'body'}
+            tone={origin ? 'ink' : 'faint'}
+            numberOfLines={1}
+            style={s.flex}>
+            {origin?.name ?? 'Search where riders meet you'}
+          </Text>
+          <ChevronIcon tint={color.inkMuted} />
+        </Pressable>
+      </Field>
+
       <Field
-        label={`From ${pickup ? pickup.name : 'the pickup'}, heading to`}
+        label="Heading to"
         hint={
           usual && destination?.name === usual.name
             ? 'Your usual destination from Account. Change it here for tonight only.'
             : 'Riders dropping off along your road will see this ride. It disappears after tonight.'
         }>
         <Pressable
-          onPress={() => setSearching(true)}
+          onPress={() => setSearching('to')}
           accessibilityRole="button"
           accessibilityLabel="Where are you going"
           style={({ pressed }) => [s.dest, pressed && s.pressed]}>
@@ -247,19 +282,30 @@ export default function PostTripScreen() {
       )}
 
       <Modal
-        visible={searching}
+        visible={searching !== null}
         animationType="slide"
         statusBarTranslucent
         navigationBarTranslucent
-        onRequestClose={() => setSearching(false)}>
-        <PlaceSearch
-          placeholder="Where are you going?"
-          intro="Type where you are heading tonight: an estate, a bus stop, a mall or a street."
-          current={destination?.name}
-          onBack={() => setSearching(false)}
-          onPick={pickDestination}
-          privacy="Your destination is on tonight's ride only, and is deleted with it."
-        />
+        onRequestClose={() => setSearching(null)}>
+        {searching === 'from' ? (
+          <PlaceSearch
+            placeholder="Where are you starting from?"
+            intro="Type where riders should meet you: a building, a gate, a car park or a street."
+            current={origin?.name}
+            onBack={() => setSearching(null)}
+            onPick={pick}
+            privacy="Your starting point is on tonight's ride only, and is deleted with it. This phone remembers it for your next ride."
+          />
+        ) : (
+          <PlaceSearch
+            placeholder="Where are you going?"
+            intro="Type where you are heading tonight: an estate, a bus stop, a mall or a street."
+            current={destination?.name}
+            onBack={() => setSearching(null)}
+            onPick={pick}
+            privacy="Your destination is on tonight's ride only, and is deleted with it."
+          />
+        )}
         <StatusBand />
       </Modal>
     </Screen>
@@ -289,6 +335,8 @@ const s = themed(() =>
     alignItems: 'center',
     justifyContent: 'center',
   },
+  fromPin: { backgroundColor: color.surface, borderWidth: 1, borderColor: color.line },
+  fromDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: PINE, backgroundColor: LIME },
   map: { height: 150, borderRadius: radius.xl, overflow: 'hidden', marginBottom: space.xl },
   // Pine in both themes: the time is the one number on this screen that matters.
   time: {

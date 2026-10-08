@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -9,12 +9,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useStore } from '@/data/store';
+import { useMyLocation } from '@/lib/location';
 import type { LngLat } from '@/lib/mapbox';
 import { searchPlaces, type Place } from '@/lib/places';
 import { color, font, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { BackIcon, CloseIcon, PinIcon, SearchIcon } from './icons';
 import { Text } from './text';
+
+const LAGOS: LngLat = { lat: 6.5, lng: 3.4 };
 
 /**
  * Search for a place in Lagos.
@@ -42,19 +44,22 @@ export function PlaceSearch({
   after?: ReactNode;
   privacy: string;
 }) {
-  const { landmarks } = useStore();
+  const me = useMyLocation();
   const [query, setQuery] = useState('');
   const [remote, setRemote] = useState<Place[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Results lean towards the pickup, where every ride starts.
-  const near = useMemo<LngLat>(() => {
-    const pickup = landmarks[0];
-    return typeof pickup?.lat === 'number' && typeof pickup?.lng === 'number'
-      ? { lat: pickup.lat, lng: pickup.lng }
-      : { lat: 6.45, lng: 3.5 };
-  }, [landmarks]);
+  // Results lean towards where the phone is, or the middle of Lagos when that
+  // is not known. The first fix only: a moving dot must not rerun the search.
+  const [near, setNear] = useState<LngLat>(me ?? LAGOS);
+  const [located, setLocated] = useState(me !== null);
+  useEffect(() => {
+    if (me && !located) {
+      setNear(me);
+      setLocated(true);
+    }
+  }, [me, located]);
 
   // One request per pause in typing. The one in flight is abandoned on the
   // next keystroke rather than allowed to land out of order.

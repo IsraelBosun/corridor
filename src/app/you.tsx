@@ -5,6 +5,7 @@ import { Linking, Pressable, StyleSheet, Switch, TextInput, View } from 'react-n
 import { USING_LOCAL } from '@/data/backend';
 import { useSession } from '@/data/session';
 import { useStore } from '@/data/store';
+import { useLastOrigin } from '@/lib/origin';
 import { REMINDERS_UNAVAILABLE, remindersOn, setRemindersOn, syncReminders } from '@/lib/reminders';
 import { useTheme, type ThemeMode } from '@/theme/theme';
 import { color, font, GUTTER, LIME, PINE, radius, space, themed } from '@/theme/tokens';
@@ -284,13 +285,16 @@ function RoleSwitch({
 }
 
 /**
- * The trip you make most evenings, drawn as one: the pickup, a line, and the
- * place you usually go. Tapping it changes the place.
+ * The trip you make most evenings, drawn as one: where it starts, a line, and
+ * the place you usually go. Tapping it changes the place.
  */
 function Commute({ driver }: { driver: boolean }) {
   const router = useRouter();
-  const { dropOff, landmarks } = useStore();
-  const pickup = landmarks[0]?.name ?? 'The pickup point';
+  const { dropOff } = useStore();
+  // A driver's last starting point, from this phone. A rider starts wherever
+  // their driver does, so there is nothing of theirs to show.
+  const lastOrigin = useLastOrigin();
+  const from = driver ? (lastOrigin?.name ?? 'Set when you offer a ride') : 'Wherever your driver starts';
   const set = Boolean(dropOff?.name);
 
   return (
@@ -310,8 +314,8 @@ function Commute({ driver }: { driver: boolean }) {
           <Text variant="small" tone="muted">
             From
           </Text>
-          <Text variant="heading" numberOfLines={1}>
-            {pickup}
+          <Text variant="heading" tone={driver && lastOrigin ? 'ink' : 'muted'} numberOfLines={1}>
+            {from}
           </Text>
           <View style={s.commuteGap} />
           <Text variant="small" tone="muted">

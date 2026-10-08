@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSession } from '@/data/session';
-import { seatsOpen, useStore } from '@/data/store';
+import { seatsOpen, startName, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { demoNow, hhmm, untilText } from '@/lib/time';
 import { useReminders } from '@/lib/reminders';
@@ -61,7 +61,7 @@ type Layout = { topBar: number; collapsed: number; expanded: number; insetTop: n
 
 function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
   const router = useRouter();
-  const { trips, me, landmarks, dropOff, dropOffName, serves, loading, mySeat } = useStore();
+  const { trips, me, dropOff, dropOffName, serves, loading, mySeat } = useStore();
   const { tester } = useSession();
   const now = demoNow();
 
@@ -71,14 +71,15 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
     .sort((a, b) => a.departMin - b.departMin);
   const passing = dropOff ? open.filter(serves) : open;
   const others = dropOff ? open.filter((t) => !serves(t)) : [];
+  // A cancelled ride is not going anywhere, so nothing of it is drawn.
+  const drawn = mySeat && mySeat.status !== 'cancelled' ? mySeat : undefined;
 
   return (
     <View style={s.screen}>
       <TripMap
-        stops={mySeat ? mySeat.stops : landmarks.map((l) => l.id)}
-        destination={mySeat?.destination}
+        origin={drawn?.origin}
+        destination={drawn?.destination}
         dropOff={dropOff}
-        showStops={!!mySeat}
         padding={{ top: topBar + space.xl, bottom: collapsed + space.lg, left: 40, right: 40 }}
         controlsBottom={collapsed + space.md}
       />
@@ -152,7 +153,7 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
 
 function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
   const router = useRouter();
-  const { trips, me, landmarks, loading, myTrip, underway } = useStore();
+  const { trips, me, loading, myTrip, underway } = useStore();
   const now = demoNow();
 
   // A ride that has already set off tonight still has one job left: the
@@ -165,10 +166,9 @@ function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
   return (
     <View style={s.screen}>
       <TripMap
-        stops={shown ? shown.stops : landmarks.map((l) => l.id)}
+        origin={shown?.origin}
         destination={shown?.destination}
         riderDrops={drops}
-        showStops={!!shown}
         padding={{ top: topBar + space.xl, bottom: collapsed + space.lg, left: 40, right: 40 }}
         controlsBottom={collapsed + space.md}
       />
@@ -339,9 +339,9 @@ function Browse({ passing, others, now }: { passing: Trip[]; others: Trip[]; now
 /** The seat you are holding. Everything a rider needs before the gate. */
 function MyRide({ trip, now }: { trip: Trip; now: number }) {
   const router = useRouter();
-  const { person, landmark, me, markPresent, finishRide, dropOffName } = useStore();
+  const { person, me, markPresent, finishRide, dropOffName } = useStore();
   const driver = person(trip.driverId);
-  const pickup = landmark(trip.stops[0]);
+  const start = startName(trip);
   const here = !!(me && trip.presentAt[me.id]);
   const openTrip = () => router.push({ pathname: '/trip/[id]', params: { id: trip.id } });
 
@@ -400,7 +400,7 @@ function MyRide({ trip, now }: { trip: Trip; now: number }) {
       <View>
         <Text variant="dataLarge">{here ? 'You are checked in' : untilText(trip.departMin, now)}</Text>
         <Text variant="small" tone="muted">
-          Leaves {hhmm(trip.departMin)}, give or take {trip.toleranceMin} min, from {pickup.name}
+          Leaves {hhmm(trip.departMin)}, give or take {trip.toleranceMin} min, from {start}
         </Text>
       </View>
 
@@ -419,7 +419,7 @@ function MyRide({ trip, now }: { trip: Trip; now: number }) {
 
       {here ? null : (
         <Button
-          label={`I am at ${pickup.name}`}
+          label={`I am at ${start}`}
           kind="go"
           onPress={() => me && markPresent(trip.id, me.id)}
         />
@@ -433,7 +433,7 @@ function MyRide({ trip, now }: { trip: Trip; now: number }) {
   );
 }
 
-/** The ride you are offering. When, who is coming, and the way to the pickup. */
+/** The ride you are offering. When, who is coming, and the way to the start. */
 function MyOffer({ trip, now }: { trip: Trip; now: number }) {
   const router = useRouter();
   const { person } = useStore();

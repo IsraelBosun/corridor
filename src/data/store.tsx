@@ -5,10 +5,9 @@ import { placeOnRoute, type LngLat } from '@/lib/mapbox';
 import * as SecureStore from 'expo-secure-store';
 
 import { demoNow, type Minutes } from '@/lib/time';
-import { backend, type LandmarkRow, type TripFields, type TripRow } from './backend';
-import { FALLBACK_LANDMARKS } from './corridor';
+import { backend, type TripFields, type TripRow } from './backend';
 import { toPerson, useSession } from './session';
-import type { DropOff, Landmark, Person, Role, Trip } from './types';
+import type { Destination, DropOff, Person, Role, Trip } from './types';
 
 /**
  * Everything the screens read and write.
@@ -17,17 +16,6 @@ import type { DropOff, Landmark, Person, Role, Trip } from './types';
  * the local test one), and the truth arrives over a change subscription rather
  * than from a setState call.
  */
-
-function toLandmark(row: LandmarkRow): Landmark {
-  return {
-    id: row.id,
-    name: row.name,
-    order: row.ord,
-    typicalMin: row.typical_min,
-    lat: row.lat ?? undefined,
-    lng: row.lng ?? undefined,
-  };
-}
 
 /**
  * The database stores timestamps, the UI reasons in minutes since midnight.
@@ -55,7 +43,6 @@ function toTrip(row: TripRow): Trip {
     id: row.id,
     code: row.code,
     driverId: row.driver_id,
-    stops: [...row.trip_stops].sort((a, b) => a.ord - b.ord).map((s) => s.landmark_id),
     departMin: toMinutes(row.depart_at),
     toleranceMin: row.tolerance_min,
     seatsTotal: row.seats_total,
@@ -66,11 +53,13 @@ function toTrip(row: TripRow): Trip {
     status: row.status,
     announceOnDepart: row.announce_on_depart,
     cancelledAtMin: row.cancelled_at ? toMinutes(row.cancelled_at) : undefined,
-    destination:
-      row.destination_name && typeof row.destination_lat === 'number' && typeof row.destination_lng === 'number'
-        ? { name: row.destination_name, lat: row.destination_lat, lng: row.destination_lng }
-        : undefined,
+    origin: place(row.origin_name, row.origin_lat, row.origin_lng),
+    destination: place(row.destination_name, row.destination_lat, row.destination_lng),
   };
+}
+
+function place(name: string | null, lat: number | null, lng: number | null): Destination | undefined {
+  return name && typeof lat === 'number' && typeof lng === 'number' ? { name, lat, lng } : undefined;
 }
 
 function toFields(t: TripDraft): TripFields {
@@ -84,6 +73,9 @@ function toFields(t: TripDraft): TripFields {
     destination_name: t.destination?.name ?? null,
     destination_lat: t.destination?.lat ?? null,
     destination_lng: t.destination?.lng ?? null,
+    origin_name: t.origin?.name ?? null,
+    origin_lat: t.origin?.lat ?? null,
+    origin_lng: t.origin?.lng ?? null,
   };
 }
 
@@ -102,23 +94,18 @@ type Store = {
   people: Record<string, Person>;
   person: (id: string) => Person;
 
-  /** The stops on the corridor, in order, from the database. */
-  landmarks: Landmark[];
-  landmark: (id: string) => Landmark;
-  corridorName: string;
-
-  /** Where the rider gets off. A corridor stop, or anywhere they searched. */
+  /** Where the rider gets off, anywhere they searched. */
   dropOff: DropOff | null;
   /** The name to put in a sentence, with a neutral stand in before it is set. */
   dropOffName: string;
   /**
    * Does this trip go past where you get off. Measured against the road the
-   * driver will actually drive, from the pickup to their destination. Without
+   * driver will actually drive, from where they start to their destination. Without
    * coordinates on both sides there is no honest answer, so it says no.
    */
   serves: (trip: Trip) => boolean;
   /**
-   * Metres driven from the pickup before the car is nearest this place. Puts
+   * Metres driven from the start before the car is nearest this place. Puts
    * the drop offs in the order they happen.
    */
   alongRoute: (trip: Trip, place: LngLat) => number;
@@ -190,9 +177,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const [trips, setTrips] = useState<Trip[]>([]);
   const [people, setPeople] = useState<Record<string, Person>>({});
-  // Seeded with a stand in so the first frame has a stop name rather than a
-  // blank. The database overwrites it as soon as the first load lands.
-  const [landmarks, setLandmarks] = useState<Landmark[]>(FALLBACK_LANDMARKS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -212,15 +196,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     try {
-      const [tripRows, profileRows, landmarkRows] = await Promise.all([
-        backend.listTrips(),
-        backend.listProfiles(),
-        backend.listLandmarks(),
-      ]);
+      const [tripRows, profileRows] = await Promise.all([backend.listTrips(), backend.listProfiles()]);
       setError(null);
       setTrips(tripRows.map(toTrip));
-      // Never swap the stand in for an empty list: no pickup means no posting.
-      if (landmarkRows.length > 0) setLandmarks(landmarkRows.map(toLandmark));
       const map: Record<string, Person> = {};
       for (const row of profileRows) map[row.id] = toPerson(row);
       setPeople(map);
@@ -261,21 +239,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [people, me]
   );
 
-  const landmark = useCallback(
-    (id: string): Landmark =>
-      landmarks.find((l) => l.id === id) ??
-      // A stop that was renamed away. Better a placeholder than a crash.
-      landmarks[0] ?? { id, name: 'Unknown stop', order: 0, typicalMin: 0 },
-    [landmarks]
-  );
-
-  const corridorName = useMemo(() => {
-    if (landmarks.length === 0) return 'The corridor';
-    const first = landmarks[0];
-    const last = landmarks[landmarks.length - 1];
-    return first.id === last.id ? first.name : `${first.name} to ${last.name}`;
-  }, [landmarks]);
-
   const setDropOff = useCallback(
     async (place: DropOff | null) => {
       const result = await saveDropOff(place);
@@ -284,18 +247,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [saveDropOff]
   );
 
-  // Every trip's points: the stops it passes, then where it is really going.
-  const pointsOf = useCallback(
-    (trip: Trip): LngLat[] => [
-      ...trip.stops
-        .map(landmark)
-        .filter((l) => typeof l.lat === 'number' && typeof l.lng === 'number')
-        .filter((l, i, all) => all.findIndex((o) => o.id === l.id) === i)
-        .map((l) => ({ lat: l.lat as number, lng: l.lng as number })),
-      ...(trip.destination ? [{ lat: trip.destination.lat, lng: trip.destination.lng }] : []),
-    ],
-    [landmark]
-  );
+  // Every trip's points: where it starts, then where it is going.
+  const pointsOf = useCallback((trip: Trip): LngLat[] => tripPoints(trip), []);
 
   // The road each trip drives, fetched once per route and shared with the map.
   // Matching is redone as each one lands.
@@ -331,17 +284,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const serves = useCallback(
     (trip: Trip) => {
       if (!dropOff) return false;
-      // A corridor stop chosen before stops were retired still has a place.
-      const stop = dropOff.landmarkId ? landmark(dropOff.landmarkId) : undefined;
-      const lat = dropOff.lat ?? stop?.lat;
-      const lng = dropOff.lng ?? stop?.lng;
+      const { lat, lng } = dropOff;
       if (typeof lat !== 'number' || typeof lng !== 'number') return false;
 
       const { line, road } = routeOf(trip);
       if (line.length < 2) return false;
       return placeOnRoute({ lat, lng }, line).off <= (road ? NEAR_ROAD_M : NEAR_LINE_M);
     },
-    [dropOff, landmark, routeOf]
+    [dropOff, routeOf]
   );
 
   const alongRoute = useCallback(
@@ -448,7 +398,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const postTrip: Store['postTrip'] = useCallback(
     async (draft) => {
       if (!me) return null;
-      return run<string | null>(() => backend.createTrip(me.id, toFields(draft), draft.stops), null);
+      return run<string | null>(() => backend.createTrip(me.id, toFields(draft)), null);
     },
     [me, run]
   );
@@ -456,7 +406,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const editTrip: Store['editTrip'] = useCallback(
     (tripId, draft) =>
       run(async () => {
-        await backend.editTrip(tripId, toFields(draft), draft.stops);
+        await backend.editTrip(tripId, toFields(draft));
         return true;
       }, false),
     [run]
@@ -472,9 +422,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       role,
       people,
       person,
-      landmarks,
-      landmark,
-      corridorName,
       dropOff,
       dropOffName,
       serves,
@@ -495,7 +442,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       editTrip,
     }),
     [
-      trips, loading, error, clearError, me, role, people, person, landmarks, landmark, corridorName,
+      trips, loading, error, clearError, me, role, people, person,
       dropOff, dropOffName, serves, alongRoute, myTrip, mySeat, underway, finishRide, setDropOff, refresh, reserve, releaseSeat,
       cancelTrip, markPresent, markAbsent, depart, postTrip, editTrip,
     ]
@@ -513,6 +460,23 @@ export function useStore(): Store {
 export function useTrip(id: string | undefined): Trip | undefined {
   const { trips } = useStore();
   return trips.find((t) => t.id === id);
+}
+
+/** A trip's start, then its end, where each is known. */
+export function tripPoints(trip: Trip): LngLat[] {
+  return [trip.origin, trip.destination]
+    .filter((p): p is Destination => p !== undefined)
+    .map((p) => ({ lat: p.lat, lng: p.lng }));
+}
+
+/** Where riders meet the car, for a sentence. */
+export function startName(trip: Trip): string {
+  return trip.origin?.name ?? 'the pickup point';
+}
+
+/** Where the driver is going, for a sentence. */
+export function endName(trip: Trip): string {
+  return trip.destination?.name ?? 'their destination';
 }
 
 /** Seats still open on a trip. */

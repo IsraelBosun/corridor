@@ -28,7 +28,7 @@ export type Person = {
  * when we have them so a trip can be measured against it.
  */
 export type DropOff = {
-  /** Set when it is one of the corridor's own stops, otherwise undefined. */
+  /** Set by a stop chosen before stops were retired. Nothing reads it now. */
   landmarkId?: string;
   name: string;
   lat?: number;
@@ -36,26 +36,6 @@ export type DropOff = {
 };
 
 export type Destination = { name: string; lat: number; lng: number };
-
-/** A public place on the corridor. Never a home, never a house-level point. */
-export type Landmark = {
-  id: string;
-  name: string;
-  /** Position along the corridor, 0 at the office end. */
-  order: number;
-  /** Typical minutes from the office pickup point in evening traffic. */
-  typicalMin: number;
-  /**
-   * Where the stop is, when we know. Null is normal and fine: a landmark is
-   * something people meet at by name, and the map falls back to a schematic
-   * rather than demanding coordinates.
-   *
-   * These are public places. Rule 2 forbids a house-level point for a person,
-   * which a road junction is not.
-   */
-  lat?: number;
-  lng?: number;
-};
 
 export type TripStatus = 'posted' | 'boarding' | 'left' | 'cancelled';
 
@@ -65,11 +45,14 @@ export type Trip = {
   /** The four character code people read out loud. Shown, never queried. */
   code: string;
   driverId: string;
-  /** Landmark ids the driver passes, in order, starting at the pickup point. */
-  stops: string[];
   /**
-   * Where the driver is actually going, past the last stop. Searched the same
-   * way a rider's drop off is. Lives on tonight's trip only and goes with it.
+   * Where the ride starts, searched by the driver. Riders meet the car here.
+   * Lives on tonight's trip only and goes with it.
+   */
+  origin?: Destination;
+  /**
+   * Where the driver is going. Searched the same way a rider's drop off is.
+   * Lives on tonight's trip only and goes with it.
    */
   destination?: Destination;
   departMin: Minutes;
@@ -78,7 +61,7 @@ export type Trip = {
   seatsTotal: number;
   /** Person ids holding a confirmed seat. */
   riders: string[];
-  /** Person id to the time they said they were at the pickup point. */
+  /** Person id to the time they said they were at the start of the ride. */
   presentAt: Record<string, Minutes>;
   vehicle: string;
   note: string;
@@ -88,11 +71,6 @@ export type Trip = {
   cancelledAtMin?: Minutes;
 };
 
-/**
- * What someone usually is. Not a permission: a driver can still take a seat in
- * somebody else's car, and a passenger who borrows one can still post a trip.
- * It decides what the corridor screen leads with, nothing more.
- */
 /**
  * What someone usually is. Not a permission: a driver can still take a seat in
  * somebody else's car, and a passenger who borrows one can still post a trip.

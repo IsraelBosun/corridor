@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
-import { useStore, useTrip } from '@/data/store';
+import { endName, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { demoNow, hhmm, untilText } from '@/lib/time';
 import { color, radius, space, themed } from '@/theme/tokens';
@@ -13,7 +13,7 @@ import { TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
 export default function PickupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { markPresent, markAbsent, depart, cancelTrip, person, landmark } = useStore();
+  const { markPresent, markAbsent, depart, cancelTrip, person } = useStore();
   const trip = useTrip(id);
   const now = demoNow();
   const { height } = useWindowDimensions();
@@ -30,7 +30,6 @@ export default function PickupScreen() {
 
   if (trip.status === 'left') return <OnTheirWay trip={trip} />;
 
-  const pickup = landmark(trip.stops[0]);
   const here = trip.riders.filter((r) => trip.presentAt[r]);
   const waiting = trip.riders.filter((r) => !trip.presentAt[r]);
   const allHere = waiting.length === 0 && here.length > 0;
@@ -69,7 +68,7 @@ export default function PickupScreen() {
           />
         </>
       }>
-      <ScreenHeader title={`Pickup at ${pickup.name}`} />
+      <ScreenHeader title={`Pickup at ${startName(trip)}`} />
 
       <Text variant="title">{headline}</Text>
       <Text variant="body" tone="muted" style={s.sub}>
@@ -78,10 +77,11 @@ export default function PickupScreen() {
 
       {/* Where everyone gets off, before anyone gets in. */}
       <View style={[s.map, { height: Math.round(height * 0.34) }]}>
+        {/* A cancelled ride is going nowhere: no road, no drop offs. */}
         <TripMap
-          stops={trip.stops}
-          destination={trip.destination}
-          riderDrops={drops}
+          origin={trip.status === 'cancelled' ? undefined : trip.origin}
+          destination={trip.status === 'cancelled' ? undefined : trip.destination}
+          riderDrops={trip.status === 'cancelled' ? [] : drops}
           padding={{ top: 40, bottom: 30, left: 30, right: 30 }}
         />
       </View>
@@ -157,7 +157,7 @@ export default function PickupScreen() {
 function OnTheirWay({ trip }: { trip: Trip }) {
   const router = useRouter();
   const { height } = useWindowDimensions();
-  const { landmark, finishRide } = useStore();
+  const { finishRide } = useStore();
 
   const aboard = trip.riders.filter((r) => trip.presentAt[r]);
   // Drop offs in the order the road reaches them, numbered the same on the
@@ -183,13 +183,13 @@ function OnTheirWay({ trip }: { trip: Trip }) {
       <Text variant="body" tone="muted" style={s.sub}>
         {aboard.length === 0
           ? 'Nobody was at the pickup, so their seats went back to the map.'
-          : `As far as ${trip.destination?.name ?? landmark(trip.stops[trip.stops.length - 1]).name}. Have a good drive.`}
+          : `As far as ${endName(trip)}. Have a good drive.`}
       </Text>
 
       {/* The map is the job now, so it gets half the screen. */}
       <View style={[s.map, { height: Math.round(height * 0.5) }]}>
         <TripMap
-          stops={trip.stops}
+          origin={trip.origin}
           destination={trip.destination}
           riderDrops={route}
           padding={{ top: 44, bottom: 36, left: 36, right: 36 }}

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useStore } from '@/data/store';
 import type { Destination, DropOff, Trip } from '@/data/types';
@@ -7,63 +7,61 @@ import { useMyLocation } from '@/lib/location';
 import type { LngLat } from '@/lib/mapbox';
 import { MapView, type MapMarker, type MapRoute, type Padding } from './map';
 
-/** Somewhere in the middle of the corridor, for a map with nothing on it yet. */
-const LAGOS: LngLat = { lat: 6.45, lng: 3.5 };
+/**
+ * Lagos, roughly from Ikeja down to the coast and out to Ajah, for a map with
+ * nothing on it and no idea where the phone is. Two corners, so it frames the
+ * city rather than zooming to street level on one point.
+ */
+const LAGOS: LngLat[] = [
+  { lat: 6.62, lng: 3.3 },
+  { lat: 6.42, lng: 3.6 },
+];
 
 /**
- * A route along the corridor, drawn on the map.
+ * A ride drawn on the map: where it starts, the road, where it ends.
  *
- * Screens pass landmark ids and nothing else: no coordinates, no provider
- * types. This is the thin map adapter the brief asks for. Swapping the tile
- * provider or the map underneath happens in ui/map.tsx and here, nowhere else.
+ * With no ride to show, the map sits on this phone's own position, or on
+ * Lagos when that is not known. It is never pinned to any one building.
  *
  * It never plots another person. The drop off pin is the place the rider chose
  * to be set down, shown only to them and to people on their trip. The one live
  * position is the viewer's own, as a "you are here" dot on their screen only.
  */
 export function TripMap({
-  stops,
-  dropOff,
+  origin,
   destination,
+  dropOff,
   riderDrops,
   padding,
-  showStops = true,
   controlsBottom,
 }: {
-  /** Landmark ids along the route, pickup first. */
-  stops: string[];
+  /** Where the ride starts. */
+  origin?: Destination;
+  /** Where the driver is going. */
+  destination?: Destination;
   /** Where the viewer gets off, if they have said. */
   dropOff?: DropOff | null;
-  /** Where the driver is really going, past the last stop. */
-  destination?: Destination;
   /** The driver's view: each rider's drop off, numbered in the order they happen. */
   riderDrops?: RiderDrop[];
   padding?: Padding;
-  /** Small markers for the stops in between. Off for a busy overview. */
-  showStops?: boolean;
   /** Lifts the frame button clear of a bottom sheet. */
   controlsBottom?: number;
 }) {
-  const { landmark } = useStore();
   const me = useMyLocation();
 
-  const located = useMemo(
-    () =>
-      stops
-        .map(landmark)
-        .filter((l) => typeof l.lat === 'number' && typeof l.lng === 'number')
-        // landmark() falls back to the first stop for an unknown id, which
-        // would put a second pickup marker on the map. One of each.
-        .filter((l, i, all) => all.findIndex((o) => o.id === l.id) === i),
-    [stops, landmark]
-  );
+  // The first fix only. Framing on the live position would move the camera
+  // every few metres while someone walks to the car.
+  const [firstFix, setFirstFix] = useState<LngLat | null>(me);
+  useEffect(() => {
+    if (me && !firstFix) setFirstFix(me);
+  }, [me, firstFix]);
 
   const points = useMemo<LngLat[]>(
-    () => [
-      ...located.map((l) => ({ lat: l.lat as number, lng: l.lng as number })),
-      ...(destination ? [{ lat: destination.lat, lng: destination.lng }] : []),
-    ],
-    [located, destination]
+    () =>
+      [origin, destination]
+        .filter((p): p is Destination => p !== undefined)
+        .map((p) => ({ lat: p.lat, lng: p.lng })),
+    [origin, destination]
   );
   const road = useRoad(points);
 
@@ -73,16 +71,8 @@ export function TripMap({
       : null;
 
   const markers = useMemo<MapMarker[]>(() => {
-    // With a destination, the route ends there and every corridor stop after
-    // the pickup is a stop on the way.
-    const lastStop = destination ? -1 : located.length - 1;
-    const out: MapMarker[] = located.map((l, i) => ({
-      id: l.id,
-      lat: l.lat as number,
-      lng: l.lng as number,
-      kind: i === 0 ? 'start' : i === lastStop ? 'end' : 'stop',
-      label: i === 0 ? l.name : i === lastStop && located.length > 1 ? l.name : undefined,
-    }));
+    const out: MapMarker[] = [];
+    if (origin) out.push({ id: 'origin', lat: origin.lat, lng: origin.lng, kind: 'start', label: origin.name });
     if (destination) {
       out.push({ id: 'destination', lat: destination.lat, lng: destination.lng, kind: 'end', label: destination.name });
     }
@@ -90,18 +80,9 @@ export function TripMap({
       if (r.lat === undefined || r.lng === undefined) continue;
       out.push({ id: `rider-${r.id}`, lat: r.lat, lng: r.lng, kind: 'rider', num: r.num });
     }
-    const visible = showStops ? out : out.filter((m) => m.kind !== 'stop');
-    if (drop && dropOff) {
-      // The rider's own stop replaces the plain marker for it, rather than
-      // stacking a second dot on top.
-      const same = dropOff.landmarkId;
-      return [
-        ...visible.filter((m) => m.id !== same),
-        { id: 'drop', lat: drop.lat, lng: drop.lng, kind: 'drop', label: dropOff.name },
-      ];
-    }
-    return visible;
-  }, [located, showStops, drop, dropOff, destination, riderDrops]);
+    if (drop && dropOff) out.push({ id: 'drop', lat: drop.lat, lng: drop.lng, kind: 'drop', label: dropOff.name });
+    return out;
+  }, [origin, destination, riderDrops, drop, dropOff]);
 
   const routes = useMemo<MapRoute[]>(
     () => (road.length >= 2 ? [{ id: 'route', points: road, tone: 'primary' }] : []),
@@ -112,9 +93,11 @@ export function TripMap({
     const riders = (riderDrops ?? [])
       .filter((r) => r.lat !== undefined && r.lng !== undefined)
       .map((r) => ({ lat: r.lat as number, lng: r.lng as number }));
-    const all = [...points, ...(drop ? [drop] : []), ...riders];
-    return all.length > 0 ? all : [LAGOS];
-  }, [points, drop, riderDrops]);
+    // No ride on screen: frame where the phone is, with the drop off if set.
+    const here = points.length === 0 && firstFix ? [firstFix] : [];
+    const all = [...points, ...(drop ? [drop] : []), ...riders, ...here];
+    return all.length > 0 ? all : LAGOS;
+  }, [points, drop, riderDrops, firstFix]);
 
   return (
     <MapView

@@ -44,15 +44,6 @@ export type ProfileRow = {
   car: string | null;
 };
 
-export type LandmarkRow = {
-  id: string;
-  name: string;
-  ord: number;
-  typical_min: number;
-  lat: number | null;
-  lng: number | null;
-};
-
 export type TripRow = {
   id: string;
   code: string;
@@ -68,7 +59,9 @@ export type TripRow = {
   destination_name: string | null;
   destination_lat: number | null;
   destination_lng: number | null;
-  trip_stops: { landmark_id: string; ord: number }[];
+  origin_name: string | null;
+  origin_lat: number | null;
+  origin_lng: number | null;
   reservations: { rider_id: string; present_at: string | null }[];
 };
 
@@ -90,6 +83,10 @@ export type TripFields = {
   destination_name: string | null;
   destination_lat: number | null;
   destination_lng: number | null;
+  /** Where the driver starts tonight. Riders meet the car here. */
+  origin_name: string | null;
+  origin_lat: number | null;
+  origin_lng: number | null;
 };
 
 export type ProfilePatch = Partial<Omit<ProfileRow, 'id'>>;
@@ -126,16 +123,15 @@ export interface Backend {
   listProfiles(): Promise<ProfileRow[]>;
 
   // The corridor
-  listLandmarks(): Promise<LandmarkRow[]>;
   listTrips(): Promise<TripRow[]>;
   /** Called whenever a trip or a reservation changes. Returns an unsubscribe. */
   onTripsChange(cb: () => void): () => void;
 
   // Driving
   /** Returns the new trip id. */
-  createTrip(driverId: string, fields: TripFields, stops: string[]): Promise<string>;
-  /** Replaces the fields and the stops of the driver's own trip. */
-  editTrip(tripId: string, fields: TripFields, stops: string[]): Promise<void>;
+  createTrip(driverId: string, fields: TripFields): Promise<string>;
+  /** Replaces the fields of the driver's own trip. */
+  editTrip(tripId: string, fields: TripFields): Promise<void>;
   cancelTrip(tripId: string): Promise<void>;
   /** Sets off: anyone not marked present loses their seat. */
   departTrip(tripId: string): Promise<void>;

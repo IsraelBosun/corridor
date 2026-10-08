@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { seatsOpen, useStore } from '@/data/store';
+import { endName, seatsOpen, startName, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { hhmm, untilText, type Minutes } from '@/lib/time';
 import { color, elevation, radius, space, themed } from '@/theme/tokens';
@@ -36,10 +36,9 @@ export function TripRow({
    */
   cta?: string;
 }) {
-  const { person, landmark } = useStore();
+  const { person } = useStore();
   const driver = person(trip.driverId);
   const open = seatsOpen(trip);
-  const last = landmark(trip.stops[trip.stops.length - 1]);
 
   return (
     <Pressable
@@ -53,7 +52,7 @@ export function TripRow({
             {driver.name.split(' ')[0]}
           </Text>
           <Text variant="small" tone="muted" numberOfLines={1}>
-            To {trip.destination?.name ?? last.name}
+            From {startName(trip)} to {endName(trip)}
           </Text>
         </View>
         <View style={s.time}>
