@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
@@ -11,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTripChat } from '@/data/chat';
-import { endName, useStore, useTrip } from '@/data/store';
+import { useStore, useTrip } from '@/data/store';
 import { hhmm } from '@/lib/time';
 import { color, font, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ArrowIcon, LockIcon } from '@/ui/icons';
@@ -20,7 +21,7 @@ import { Text } from '@/ui/text';
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { person, me } = useStore();
+  const { person, me, loading: tripsLoading } = useStore();
   const trip = useTrip(id);
   const { messages, loading, error, send, clearError } = useTripChat(id, me?.id);
 
@@ -48,10 +49,17 @@ export default function ChatScreen() {
       <SafeAreaView style={s.screen} edges={['top', 'left', 'right']}>
         <View style={s.pad}>
           <ScreenHeader eyebrow="Trip chat" />
-          <Text variant="title">This trip is gone.</Text>
-          <Text variant="body" tone="muted" style={s.gap}>
-            The chat went with it. Nothing is kept once a trip is over.
-          </Text>
+          {/* Opened cold, the rides have not arrived yet. That is not "gone". */}
+          {tripsLoading ? (
+            <ActivityIndicator color={color.inkFaint} />
+          ) : (
+            <>
+              <Text variant="title">This trip is gone.</Text>
+              <Text variant="body" tone="muted" style={s.gap}>
+                It is no longer on the map.
+              </Text>
+            </>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -94,8 +102,7 @@ export default function ChatScreen() {
           <Callout icon={<LockIcon />}>
             <Text variant="small" tone="muted">
               Only {person(trip.driverId).name.split(' ')[0]} and the people
-              holding a seat can read this. It disappears with the trip tonight,
-              and phone numbers cannot be sent here.
+              holding a seat can read this. Phone numbers cannot be sent here.
             </Text>
           </Callout>
 
@@ -173,10 +180,6 @@ export default function ChatScreen() {
             <ArrowIcon tint={color.onInk} />
           </Pressable>
         </View>
-
-        <Text variant="small" tone="faint" style={s.footNote}>
-          Closes when the trip reaches {endName(trip)}.
-        </Text>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -238,6 +241,5 @@ const s = themed(() =>
   },
   sendDisabled: { opacity: 0.3 },
   pressed: { opacity: 0.7 },
-  footNote: { paddingHorizontal: GUTTER, paddingVertical: space.md },
   })
 );

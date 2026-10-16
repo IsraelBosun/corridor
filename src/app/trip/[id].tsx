@@ -1,16 +1,16 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { usePayout } from '@/data/payout';
 import { useSession } from '@/data/session';
-import { endName, seatsOpen, startName, useStore, useTrip } from '@/data/store';
+import { bookable, endName, seatsOpen, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { useMyLocation } from '@/lib/location';
 import { NEAR_PICKUP_M, pickupMetres } from '@/lib/nearby';
-import { demoNow, hhmm, untilHeading } from '@/lib/time';
+import { hhmm, untilHeading, useNow } from '@/lib/time';
 import { color, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, BackIcon, CarIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
@@ -37,12 +37,13 @@ export default function TripScreen() {
     role,
     error,
     clearError,
+    loading,
   } = useStore();
   const { tester } = useSession();
   const trip = useTrip(id);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const now = demoNow();
+  const now = useNow();
   // The driver's bank details, for a rider holding a seat on a paid ride. The
   // database answers only them; anyone else gets nothing back.
   const holding = Boolean(me && trip?.riders.includes(me.id));
@@ -56,10 +57,17 @@ export default function TripScreen() {
     return (
       <Screen>
         <ScreenHeader title="Ride" />
-        <Text variant="title">This ride is gone.</Text>
-        <Text variant="body" tone="muted" style={s.gap}>
-          The driver took it down. Other rides are on the map.
-        </Text>
+        {/* Opened cold, the rides have not arrived yet. That is not "gone". */}
+        {loading ? (
+          <ActivityIndicator color={color.inkFaint} />
+        ) : (
+          <>
+            <Text variant="title">This ride is gone.</Text>
+            <Text variant="body" tone="muted" style={s.gap}>
+              The driver took it down. Other rides are on the map.
+            </Text>
+          </>
+        )}
       </Screen>
     );
   }
@@ -74,6 +82,10 @@ export default function TripScreen() {
   const present = !!(me && trip.presentAt[me.id]);
   const start = startName(trip);
   const passes = dropOff ? serves(trip) : undefined;
+  // Read again each tick, so a ride that sets off, or runs well past its
+  // time, while this is open stops offering a seat.
+  const canBook = bookable(trip);
+  const isDriver = me ? trip.driverId === me.id : false;
 
   async function onReserve() {
     setBusy(true);
@@ -219,8 +231,9 @@ export default function TripScreen() {
                 {naira(trip.contributionNaira)} fuel contribution
               </Text>
               <Text variant="small" tone="muted">
-                {mine ? 'Pay' : 'If you take a seat, pay'} {driver.name.split(' ')[0]} directly when you
-                get in, in cash or by transfer. Corridor never handles money.
+                {isDriver && !mine
+                  ? 'Each rider pays you directly when they get in, in cash or by transfer. Corridor never handles money.'
+                  : `${mine ? 'Pay' : 'If you take a seat, pay'} ${driver.name.split(' ')[0]} directly when you get in, in cash or by transfer. Corridor never handles money.`}
               </Text>
               {mine && payout ? (
                 <View style={s.bank}>
@@ -257,6 +270,17 @@ export default function TripScreen() {
               />
               <Row icon={<CarIcon />} title={trip.vehicle || 'Car not described yet'} subtitle="How to spot the car" last />
             </View>
+          ) : null}
+
+          {mine || isDriver ? (
+            <Row
+              icon={<AlertIcon />}
+              title="Report a problem"
+              subtitle="About the driver, a rider, or the ride. Nobody is told who reported."
+              onPress={() => router.push({ pathname: '/report/[id]', params: { id: trip.id } })}
+              tone="stop"
+              last
+            />
           ) : null}
 
           <Text variant="small" tone="faint" style={s.foot}>
@@ -321,16 +345,20 @@ export default function TripScreen() {
           ) : (
             <Button
               label={
-                open === 0
-                  ? 'No seats left'
-                  : busy
-                    ? 'Reserving'
-                    : trip.contributionNaira
-                      ? `Reserve a seat, ${naira(trip.contributionNaira)}`
-                      : 'Reserve a seat'
+                trip.status === 'left'
+                  ? 'This ride has left'
+                  : !canBook
+                    ? 'Too late to book this ride'
+                    : open === 0
+                      ? 'No seats left'
+                      : busy
+                        ? 'Reserving'
+                        : trip.contributionNaira
+                          ? `Reserve a seat, ${naira(trip.contributionNaira)}`
+                          : 'Reserve a seat'
               }
               onPress={onReserve}
-              disabled={open === 0 || busy}
+              disabled={!canBook || open === 0 || busy}
             />
           )}
         </View>
@@ -375,7 +403,7 @@ function RouteStop({
 function CancelledTrip({ trip }: { trip: Trip }) {
   const router = useRouter();
   const { trips, serves, person, dropOff } = useStore();
-  const now = demoNow();
+  const now = useNow();
   const here = useMyLocation();
   // Same rule as the home list: a pickup you can walk to, on a road past your stop.
   const near = (t: Trip) => {
@@ -387,11 +415,10 @@ function CancelledTrip({ trip }: { trip: Trip }) {
     .filter(
       (t) =>
         t.id !== trip.id &&
-        (t.status === 'posted' || t.status === 'boarding') &&
+        bookable(t) &&
         seatsOpen(t) > 0 &&
         (!dropOff || serves(t)) &&
-        near(t) &&
-        t.departMin >= now - 10
+        near(t)
     )
     .sort((a, b) => a.departMin - b.departMin)
     .slice(0, 4);

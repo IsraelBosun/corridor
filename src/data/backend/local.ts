@@ -600,6 +600,10 @@ export const localBackend: Backend = {
     messageListeners.set(tripId, set);
     return () => set.delete(cb);
   },
+
+  // Nobody reads reports on a test phone, so they go nowhere. The screen
+  // still behaves as it does against the real backend.
+  async reportPerson() {},
 };
 
 /* -------------------------------------------------------------------------- */

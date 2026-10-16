@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
+import { hasPhone } from '@/lib/phones';
 import type { Minutes } from '@/lib/time';
 import { backend, type MessageRow } from './backend';
 
@@ -36,11 +38,10 @@ function toMessage(row: MessageRow): Message {
 }
 
 /**
- * A run of nine or more digits is refused, so a phone number cannot be typed
- * into a trip chat even by someone determined to. That is a product rule, so
- * the person deserves to be told why rather than shown a constraint error.
+ * A phone number cannot be typed into a trip chat even by someone determined
+ * to. That is a product rule, so the person deserves to be told why rather
+ * than shown a constraint error.
  */
-const PHONE_SHAPED = /[0-9][0-9 ()+-]{8,}/;
 const NO_PHONES = 'Phone numbers stay out of the trip chat. Say it here instead.';
 
 export function useTripChat(tripId: string | undefined, meId: string | undefined) {
@@ -58,7 +59,8 @@ export function useTripChat(tripId: string | undefined, meId: string | undefined
     try {
       const rows = (await backend.listMessages(tripId)).map(toMessage);
       seen.current = new Set(rows.map((m) => m.id));
-      setMessages(rows);
+      // Anything still sending stays on screen until its own reply lands.
+      setMessages((all) => [...rows, ...all.filter((m) => m.pending)]);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load the chat.');
@@ -69,6 +71,15 @@ export function useTripChat(tripId: string | undefined, meId: string | undefined
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // Live updates only arrive while the app is in front. Coming back to it,
+  // fetch the lot so what was said in the meantime appears.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') load();
+    });
+    return () => sub.remove();
   }, [load]);
 
   useEffect(() => {
@@ -87,7 +98,7 @@ export function useTripChat(tripId: string | undefined, meId: string | undefined
       const text = body.trim();
       if (!text || !tripId || !meId) return false;
 
-      if (PHONE_SHAPED.test(text)) {
+      if (hasPhone(text)) {
         setError(NO_PHONES);
         return false;
       }
@@ -107,7 +118,9 @@ export function useTripChat(tripId: string | undefined, meId: string | undefined
       try {
         const row = await backend.sendMessage(tripId, meId, text);
         seen.current.add(row.id);
-        setMessages((all) => [...all.filter((m) => m.id !== optimistic.id), toMessage(row)]);
+        // The live update can land before this reply does and add the row
+        // first, so drop any copy of it as well as the optimistic one.
+        setMessages((all) => [...all.filter((m) => m.id !== optimistic.id && m.id !== row.id), toMessage(row)]);
         return true;
       } catch (e) {
         setMessages((all) => all.filter((m) => m.id !== optimistic.id));

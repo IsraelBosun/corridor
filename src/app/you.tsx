@@ -7,6 +7,7 @@ import { usePayout } from '@/data/payout';
 import { useSession } from '@/data/session';
 import { useStore } from '@/data/store';
 import { useLastOrigin } from '@/lib/origin';
+import { hasPhone, noPhones } from '@/lib/phones';
 import { REMINDERS_UNAVAILABLE, remindersOn, setRemindersOn, syncReminders } from '@/lib/reminders';
 import { useTheme, type ThemeMode } from '@/theme/theme';
 import { color, font, GUTTER, LIME, PINE, radius, space, themed } from '@/theme/tokens';
@@ -183,8 +184,8 @@ export default function YouScreen() {
       <Text variant="small" tone="faint" style={s.foot}>
         A notice board between verified commuters, not a transport service. Drivers and vehicles are not
         vetted. Corridor never handles money: a fuel contribution, when a driver asks for one, goes
-        straight from rider to driver. We keep your name, your work address and one usual place,
-        and nothing about where you have been.
+        straight from rider to driver. We keep your name, your work address, one usual place, and a
+        private record of the rides you take, for safety. Never your live location.
       </Text>
     </Screen>
   );
@@ -705,6 +706,10 @@ function CarField() {
 
   async function save() {
     if (!changed || busy) return;
+    if (hasPhone(draft)) {
+      setError(noPhones('the car description'));
+      return;
+    }
     setBusy(true);
     setError(null);
     const result = await setCar(draft);

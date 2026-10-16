@@ -1,10 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { endName, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
-import { demoNow, hhmm, untilText } from '@/lib/time';
+import { hhmm, untilText, useNow } from '@/lib/time';
 import { color, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
@@ -15,22 +16,46 @@ import { TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
 export default function PickupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { markPresent, markAbsent, depart, cancelTrip, person } = useStore();
+  const { markPresent, markAbsent, depart, cancelTrip, person, loading } = useStore();
   const trip = useTrip(id);
-  const now = demoNow();
+  const now = useNow();
   const { height } = useWindowDimensions();
   const drops = useRiderDrops(trip, trip?.riders ?? []);
+  // Start and cancel each send one request. A second tap while it is out
+  // would send another and show an error for a ride that already went.
+  const [busy, setBusy] = useState(false);
 
   if (!trip) {
     return (
       <Screen>
         <ScreenHeader title="Pickup" />
-        <Text variant="title">This ride is gone.</Text>
+        {loading ? <ActivityIndicator color={color.inkFaint} /> : <Text variant="title">This ride is gone.</Text>}
       </Screen>
     );
   }
 
   if (trip.status === 'left') return <OnTheirWay trip={trip} />;
+
+  // Cancelled somewhere else (Edit ride, or another phone) while this was open.
+  if (trip.status === 'cancelled') {
+    return (
+      <Screen footer={<Button label="Back to the map" kind="secondary" onPress={() => router.replace('/')} />}>
+        <ScreenHeader title="Pickup" />
+        <Text variant="title">This ride is cancelled.</Text>
+        <Text variant="body" tone="muted" style={s.sub}>
+          {trip.riders.length === 0
+            ? 'It is off the map.'
+            : 'Everyone with a seat has been told, so they can find another way home.'}
+        </Text>
+      </Screen>
+    );
+  }
+
+  async function go() {
+    setBusy(true);
+    await depart(trip!.id);
+    setBusy(false);
+  }
 
   const here = trip.riders.filter((r) => trip.presentAt[r]);
   const waiting = trip.riders.filter((r) => !trip.presentAt[r]);
@@ -41,8 +66,22 @@ export default function PickupScreen() {
   // Setting off with someone still on their way leaves them behind, and it
   // cannot be undone, so it is asked first. Everyone here just goes.
   function start() {
+    if (busy) return;
+    // Setting off empty takes the ride off every rider's list for good, so
+    // that is asked too.
+    if (trip!.riders.length === 0) {
+      showDialog(
+        'Set off with nobody booked?',
+        'The ride comes off the map, so nobody can book it after this. This cannot be undone.',
+        [
+          { text: 'Wait a bit', style: 'cancel' },
+          { text: 'Set off', onPress: go },
+        ]
+      );
+      return;
+    }
     if (waiting.length === 0) {
-      depart(trip!.id);
+      go();
       return;
     }
     const who = waiting.length === 1 ? firstName(waiting[0]) : `${waiting.length} riders`;
@@ -51,12 +90,13 @@ export default function PickupScreen() {
       `${waiting.length === 1 ? 'Their seat goes' : 'Their seats go'} back on the map so they can find another ride. This cannot be undone.`,
       [
         { text: 'Wait a bit', style: 'cancel' },
-        { text: `Leave without ${who}`, style: 'destructive', onPress: () => depart(trip!.id) },
+        { text: `Leave without ${who}`, style: 'destructive', onPress: go },
       ]
     );
   }
 
   function cancel() {
+    if (busy) return;
     const n = trip!.riders.length;
     showDialog(
       "Cancel tonight's ride?",
@@ -69,7 +109,9 @@ export default function PickupScreen() {
           text: 'Cancel the ride',
           style: 'destructive',
           onPress: async () => {
+            setBusy(true);
             await cancelTrip(trip!.id);
+            setBusy(false);
             router.replace('/');
           },
         },
@@ -98,8 +140,9 @@ export default function PickupScreen() {
             }
             kind={overdue ? 'primary' : 'go'}
             onPress={start}
+            disabled={busy}
           />
-          <Button label="Cancel this ride" kind="danger" onPress={cancel} />
+          <Button label="Cancel this ride" kind="danger" onPress={cancel} disabled={busy} />
         </>
       }>
       <ScreenHeader title="Pickup" />
@@ -112,11 +155,10 @@ export default function PickupScreen() {
 
       {/* Where everyone gets off, before anyone gets in. */}
       <View style={[s.map, { height: Math.round(height * 0.34) }]}>
-        {/* A cancelled ride is going nowhere: no road, no drop offs. */}
         <TripMap
-          origin={trip.status === 'cancelled' ? undefined : trip.origin}
-          destination={trip.status === 'cancelled' ? undefined : trip.destination}
-          riderDrops={trip.status === 'cancelled' ? [] : drops}
+          origin={trip.origin}
+          destination={trip.destination}
+          riderDrops={drops}
           padding={{ top: 40, bottom: 30, left: 30, right: 30 }}
         />
       </View>
@@ -217,7 +259,7 @@ function OnTheirWay({ trip }: { trip: Trip }) {
       </Text>
       <Text variant="body" tone="muted" style={s.sub}>
         {aboard.length === 0
-          ? 'Nobody was at the pickup, so their seats went back to the map.'
+          ? `Nobody is riding with you, so head straight for ${endName(trip)}. Have a good drive.`
           : `As far as ${endName(trip)}. Have a good drive.`}
       </Text>
 

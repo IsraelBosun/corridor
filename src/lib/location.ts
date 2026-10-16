@@ -11,10 +11,18 @@
  */
 import * as Location from 'expo-location';
 import { useEffect, useSyncExternalStore } from 'react';
+import { AppState, Linking } from 'react-native';
 
 import type { LngLat } from './mapbox';
 
+/**
+ * Where the permission stands. 'blocked' is a "no" the phone will not ask
+ * again, so only the phone's settings can undo it.
+ */
+export type LocationAccess = 'unknown' | 'granted' | 'denied' | 'blocked';
+
 let here: LngLat | null = null;
+let access: LocationAccess = 'unknown';
 let users = 0;
 let watch: Location.LocationSubscription | null = null;
 let starting = false;
@@ -25,12 +33,20 @@ function publish(next: LngLat | null) {
   listeners.forEach((l) => l());
 }
 
+function setAccess(next: LocationAccess) {
+  if (next === access) return;
+  access = next;
+  listeners.forEach((l) => l());
+}
+
 async function start() {
   if (watch || starting) return;
   starting = true;
   try {
-    // Asked once; a "no" is respected and the map simply has no dot.
-    const { granted } = await Location.requestForegroundPermissionsAsync();
+    // A "no" is respected and the map simply has no dot, but the person can
+    // change their mind: see askForLocation.
+    const { granted, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+    setAccess(granted ? 'granted' : canAskAgain ? 'denied' : 'blocked');
     if (!granted || users === 0) return;
 
     // A quick first fix from the last known position, so the dot appears
@@ -65,6 +81,34 @@ function subscribe(l: () => void) {
   return () => {
     listeners.delete(l);
   };
+}
+
+/**
+ * After a "no": ask again if the phone still allows it, otherwise open this
+ * app's page in the phone's settings. Coming back from there is picked up by
+ * the listener below.
+ */
+export function askForLocation() {
+  if (access === 'blocked') {
+    Linking.openSettings().catch(() => {});
+    return;
+  }
+  start();
+}
+
+// Back from the phone's settings with location now allowed: start the dot.
+AppState.addEventListener('change', (state) => {
+  if (state !== 'active' || users === 0 || access === 'granted' || access === 'unknown') return;
+  Location.getForegroundPermissionsAsync()
+    .then(({ granted }) => {
+      if (granted) start();
+    })
+    .catch(() => {});
+});
+
+/** Where the location permission stands, redrawn when it changes. */
+export function useLocationAccess(): LocationAccess {
+  return useSyncExternalStore(subscribe, () => access);
 }
 
 /** This phone's position while the calling component is mounted, or null. */

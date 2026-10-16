@@ -56,6 +56,11 @@ export type Trip = {
    */
   destination?: Destination;
   departMin: Minutes;
+  /**
+   * The same departure as a full timestamp, in milliseconds. departMin has no
+   * date, so this is what tells tonight's ride from last night's.
+   */
+  departAt: number;
   /** The give or take. The departure is a window, not a time. */
   toleranceMin: number;
   seatsTotal: number;

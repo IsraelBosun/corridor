@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react';
+
 import { EVENING_END_MIN, EVENING_START_MIN } from './config';
 
 /** Minutes since midnight. Every time in the app is stored this way. */
@@ -98,4 +100,29 @@ export function nowMinutes(): Minutes {
  */
 export function demoNow(): Minutes {
   return nowMinutes();
+}
+
+/*
+  One timer for every screen that shows a countdown. Without it "in 5 min"
+  only moved when something else redrew the screen, so a phone left open on
+  the pickup read "in 5 min" long after the ride was due.
+*/
+const ticks = new Set<() => void>();
+let timer: ReturnType<typeof setInterval> | null = null;
+
+function onTick(l: () => void) {
+  ticks.add(l);
+  if (!timer) timer = setInterval(() => ticks.forEach((t) => t()), 15_000);
+  return () => {
+    ticks.delete(l);
+    if (ticks.size === 0 && timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  };
+}
+
+/** demoNow, redrawing the caller each time the minute changes. */
+export function useNow(): Minutes {
+  return useSyncExternalStore(onTick, demoNow);
 }

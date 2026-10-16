@@ -49,7 +49,7 @@ Copy `.env.example` to `.env` and fill in:
 
 | Variable | What it is |
 |---|---|
-| `EXPO_PUBLIC_WORK_DOMAIN` | The email domain colleagues verify with, for example `example.com`. |
+| `EXPO_PUBLIC_WORK_DOMAIN` | Email domain for the made-up accounts of the local backend only, for example `example.com`. Real sign-ups accept any work email. |
 | `EXPO_PUBLIC_SUPABASE_URL` | Your Supabase project URL. |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | The project's anon or publishable key. |
 | `EXPO_PUBLIC_MAPBOX_TOKEN` | A Mapbox public token (starts with `pk.`), for map tiles, search and routes. |

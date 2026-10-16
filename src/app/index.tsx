@@ -5,13 +5,13 @@ import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSession } from '@/data/session';
-import { seatsOpen, startName, useStore } from '@/data/store';
+import { bookable, seatsOpen, startName, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import type { LngLat } from '@/lib/mapbox';
 import { naira } from '@/lib/config';
-import { useMyLocation } from '@/lib/location';
+import { askForLocation, useLocationAccess, useMyLocation } from '@/lib/location';
 import { NEAR_PICKUP_M, pickupMetres } from '@/lib/nearby';
-import { demoNow, hhmm, untilHeading, untilShort } from '@/lib/time';
+import { hhmm, untilHeading, untilShort, useNow } from '@/lib/time';
 import { useReminders } from '@/lib/reminders';
 import { peekReturnTo, takeReturnTo } from '@/theme/theme';
 import { color, currentScheme, elevation, GUTTER, LIME, radius, space, themed } from '@/theme/tokens';
@@ -67,11 +67,12 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
   const router = useRouter();
   const { trips, me, dropOff, dropOffName, serves, loading, mySeat } = useStore();
   const { tester } = useSession();
-  const now = demoNow();
+  const now = useNow();
 
   const open = trips
-    // Your own ride is hidden, except for testers, who book it to try both sides.
-    .filter((t) => (t.status === 'posted' || t.status === 'boarding') && (tester || t.driverId !== me?.id))
+    // Your own ride is hidden, except for testers, who book it to try both
+    // sides. So is one well past its time that the driver never started.
+    .filter((t) => bookable(t) && (tester || t.driverId !== me?.id))
     .sort((a, b) => a.departMin - b.departMin);
   // A ride is for you when you can walk to where it starts (within 1 km of
   // where this phone is now) and its road passes where you get off. Either
@@ -168,7 +169,7 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
 function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
   const router = useRouter();
   const { trips, me, loading, myTrip, underway } = useStore();
-  const now = demoNow();
+  const now = useNow();
 
   // A ride that has already set off tonight still has one job left: the
   // drop offs, in order.
@@ -268,14 +269,15 @@ function LoadError() {
 }
 
 /**
- * "This evening" before noon and "Tonight" after it, then the title, with an
- * optional count on the right.
+ * "This evening" in the morning and "Tonight" from noon, and still "Tonight"
+ * in the small hours, then the title, with an optional count on the right.
  */
 function SheetTitle({ title, aside }: { title: string; aside?: string }) {
+  const now = useNow();
   return (
     <View>
       <Text variant="kicker" tone="brand">
-        {demoNow() < 12 * 60 ? 'This evening' : 'Tonight'}
+        {now >= 5 * 60 && now < 12 * 60 ? 'This evening' : 'Tonight'}
       </Text>
       <View style={s.titleRow}>
         <Text variant="title" style={s.flex} numberOfLines={1}>
@@ -304,6 +306,7 @@ function Browse({
 }) {
   const router = useRouter();
   const { dropOff, dropOffName } = useStore();
+  const access = useLocationAccess();
   const open = (id: string) => router.push({ pathname: '/trip/[id]', params: { id } });
 
   if (passing.length === 0 && others.length === 0) {
@@ -329,11 +332,19 @@ function Browse({
         </Pressable>
       ) : null}
 
-      {!here ? (
-        <Text variant="small" tone="muted" style={s.none}>
-          Allow location to see which pickups are within walking distance. It stays on
-          this phone.
-        </Text>
+      {/*
+        Only after a "no". While the first fix is coming in there is nothing
+        to say, and allowing it is a tap away rather than a dead sentence.
+      */}
+      {!here && (access === 'denied' || access === 'blocked') ? (
+        <Pressable onPress={askForLocation} style={s.none} accessibilityRole="button">
+          <Text variant="small" tone="muted">
+            Location is off, so pickups are not sorted by distance. It stays on this phone.{' '}
+            <Text variant="small" tone="brand" style={s.link}>
+              {access === 'blocked' ? 'Turn it on in Settings' : 'Allow location'}
+            </Text>
+          </Text>
+        </Pressable>
       ) : null}
 
       {passing.map((t, i) => (

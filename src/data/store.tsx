@@ -4,7 +4,7 @@ import { knownRoad, roadFor } from '@/lib/directions';
 import { placeOnRoute, type LngLat } from '@/lib/mapbox';
 import * as SecureStore from 'expo-secure-store';
 
-import { demoNow, type Minutes } from '@/lib/time';
+import { useNow, type Minutes } from '@/lib/time';
 import { backend, type TripFields, type TripRow } from './backend';
 import { toPerson, useSession } from './session';
 import type { Destination, DropOff, Person, Role, Trip } from './types';
@@ -44,6 +44,7 @@ function toTrip(row: TripRow): Trip {
     code: row.code,
     driverId: row.driver_id,
     departMin: toMinutes(row.depart_at),
+    departAt: new Date(row.depart_at).getTime(),
     toleranceMin: row.tolerance_min,
     seatsTotal: row.seats_total,
     riders: row.reservations.map((r) => r.rider_id),
@@ -146,7 +147,7 @@ type Store = {
   editTrip: (tripId: string, t: TripDraft) => Promise<boolean>;
 };
 
-export type TripDraft = Omit<Trip, 'id' | 'code' | 'driverId' | 'riders' | 'presentAt' | 'status'>;
+export type TripDraft = Omit<Trip, 'id' | 'code' | 'driverId' | 'riders' | 'presentAt' | 'status' | 'departAt'>;
 
 const Ctx = createContext<Store | null>(null);
 
@@ -164,6 +165,14 @@ const FINISHED_KEY = 'corridor.finished-rides';
 const RIDE_MAX_MIN = 180;
 
 /**
+ * Older than this and a ride is last night's. Same cut off as
+ * purge_yesterday(), which deletes these rows overnight when its job is
+ * switched on. The app does not count on that: without it, yesterday's rides
+ * would come back every evening looking like tonight's.
+ */
+const STALE_MS = 8 * 60 * 60 * 1000;
+
+/**
  * How far off the driver's road still counts as on the way: a short walk, or a
  * small detour the driver can agree to in the ride chat. Searched estates come
  * back as their middle, not their gate, so a big one like Lekki Phase 1 sits
@@ -172,6 +181,37 @@ const RIDE_MAX_MIN = 180;
 const NEAR_ROAD_M = 1500;
 /** Before the road has loaded, the route is straight lines, so allow more. */
 const NEAR_LINE_M = 2000;
+
+/**
+ * Last night's ride still marked live counts as your one live ride, or your
+ * one seat, and the database would refuse tonight's post or booking because of
+ * it. Each person tidies their own: a driver cancels theirs, a rider gives up
+ * theirs. Quietly, since nobody is waiting on a ride from yesterday.
+ */
+function clearStale(rows: TripRow[], meId: string) {
+  for (const r of rows) {
+    if (r.status !== 'posted' && r.status !== 'boarding') continue;
+    const work =
+      r.driver_id === meId
+        ? backend.cancelTrip(r.id)
+        : r.reservations.some((x) => x.rider_id === meId)
+          ? backend.releaseSeat(r.id, meId)
+          : null;
+    work?.catch(() => {
+      // Tried again on the next load.
+    });
+  }
+}
+
+/**
+ * Can a rider still take a seat. Not once it has left, and not once it is
+ * well past due: a ride the driver never started is not one to book.
+ */
+export function bookable(t: Trip, nowMs = Date.now()): boolean {
+  if (t.status !== 'posted' && t.status !== 'boarding') return false;
+  const late = (nowMs - t.departAt) / 60_000;
+  return late < Math.max(20, t.toleranceMin);
+}
 
 function messageOf(e: unknown, fallback: string): string {
   return e instanceof Error && e.message ? e.message : fallback;
@@ -203,7 +243,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     try {
       const [tripRows, profileRows] = await Promise.all([backend.listTrips(), backend.listProfiles()]);
       setError(null);
-      setTrips(tripRows.map(toTrip));
+      const cutoff = Date.now() - STALE_MS;
+      const stale = tripRows.filter((r) => new Date(r.depart_at).getTime() < cutoff);
+      setTrips(tripRows.filter((r) => !stale.includes(r)).map(toTrip));
+      clearStale(stale, session.userId);
       const map: Record<string, Person> = {};
       for (const row of profileRows) map[row.id] = toPerson(row);
       setPeople(map);
@@ -308,6 +351,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // car is on the road until each person says they are done, so that is kept
   // on this phone, by trip id, and goes when the trip is purged.
   const [finished, setFinished] = useState<Set<string>>(new Set());
+  // Ticks, so a ride left on the road with nobody saying it is over still ends.
+  const now = useNow();
   useEffect(() => {
     SecureStore.getItemAsync(FINISHED_KEY)
       .then((v) => v && setFinished(new Set(JSON.parse(v) as string[])))
@@ -336,8 +381,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // A ride nobody marked done still ends: nothing on this corridor takes
       // three hours, and an evening ride must not still be "on the way" at 1am.
       // Minutes since departure, wrapping past midnight.
-      (demoNow() - t.departMin + 1440) % 1440 < RIDE_MAX_MIN,
-    [finished]
+      (now - t.departMin + 1440) % 1440 < RIDE_MAX_MIN,
+    [finished, now]
   );
 
   const myTrip = useMemo(

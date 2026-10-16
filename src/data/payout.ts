@@ -18,25 +18,37 @@ function toPayout(row: PayoutRow): Payout {
 
 export function usePayout(userId: string | undefined, enabled = true, refreshKey = '') {
   const [payout, setPayout] = useState<Payout | null>(null);
-  const [loading, setLoading] = useState(Boolean(userId && enabled));
+  const [fetching, setFetching] = useState(false);
+  // Whose details the last answer was for. Until one arrives for the person
+  // asked about, this is still loading, so switching a ride to paid does not
+  // flash "add bank details" for the moment before the first fetch starts.
+  const [answered, setAnswered] = useState<string | null>(null);
+  // The last fetch failed, as opposed to there being nothing saved.
+  const [failed, setFailed] = useState(false);
 
   const reload = useCallback(async () => {
     if (!userId || !enabled) {
       setPayout(null);
-      setLoading(false);
+      setAnswered(null);
+      setFailed(false);
       return;
     }
-    setLoading(true);
+    setFetching(true);
     try {
       const row = await backend.getPayout(userId);
       setPayout(row ? toPayout(row) : null);
+      setFailed(false);
     } catch {
       // Not shown is the safe failure: the rider can still pay in cash.
       setPayout(null);
+      setFailed(true);
     } finally {
-      setLoading(false);
+      setAnswered(userId);
+      setFetching(false);
     }
   }, [userId, enabled]);
+
+  const loading = Boolean(userId && enabled) && (fetching || answered !== userId);
 
   useEffect(() => {
     reload();
@@ -57,6 +69,7 @@ export function usePayout(userId: string | undefined, enabled = true, refreshKey
           }
         );
         setPayout(next);
+        setFailed(false);
         return null;
       } catch (e) {
         return e instanceof Error && e.message ? e.message : 'That did not save. Try again.';
@@ -65,5 +78,5 @@ export function usePayout(userId: string | undefined, enabled = true, refreshKey
     [userId]
   );
 
-  return { payout, loading, save, reload };
+  return { payout, loading, failed, save, reload };
 }

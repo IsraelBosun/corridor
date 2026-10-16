@@ -168,4 +168,21 @@ export interface Backend {
   listMessages(tripId: string): Promise<MessageRow[]>;
   sendMessage(tripId: string, authorId: string, body: string): Promise<MessageRow>;
   onMessage(tripId: string, cb: (row: MessageRow) => void): () => void;
+
+  // Safety
+  /**
+   * Reports a problem on a ride the signed in person is on. reportedId is the
+   * driver or a rider on it, or null for the ride as a whole. The database
+   * keeps a record of the ride and the report goes to whoever runs Corridor;
+   * nobody on the ride is told.
+   */
+  reportPerson(tripId: string, reportedId: string | null, category: ReportCategory, details: string): Promise<void>;
 }
+
+export type ReportCategory =
+  | 'unsafe_driving'
+  | 'harassment'
+  | 'no_show'
+  | 'payment'
+  | 'inappropriate_messages'
+  | 'other';

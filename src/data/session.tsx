@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { WORK_DOMAIN } from '@/lib/config';
 import { backend, type AuthSession, type Membership, type ProfileRow } from './backend';
 import type { DropOff, Person, Role } from './types';
 
@@ -44,7 +43,7 @@ type SessionState = {
   /** A new account. needsConfirm: check the inbox, then sign in. */
   signUp: (email: string, password: string) => Promise<Result & { needsConfirm?: boolean }>;
   /** The part before the @; the allowed domain is added here. */
-  sendWorkCode: (handle: string) => Promise<Result>;
+  sendWorkCode: (email: string) => Promise<Result>;
   verifyWorkCode: (code: string) => Promise<Result>;
   forgetWorkEmail: () => Promise<Result>;
   saveProfile: (draft: ProfileDraft) => Promise<Result>;
@@ -181,8 +180,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const sendWorkCode = useCallback(async (handle: string): Promise<Result> => {
-    const address = handle.trim().toLowerCase().replace(/@.*$/, '') + '@' + WORK_DOMAIN;
+  const sendWorkCode = useCallback(async (email: string): Promise<Result> => {
+    const address = email.trim().toLowerCase();
     try {
       await backend.sendWorkCode(address);
       return { ok: true };
@@ -319,7 +318,7 @@ export function useSession(): SessionState {
 function readable(text: string): string {
   const m = text.toLowerCase();
   if (m.includes('outside the group')) {
-    return 'Verify your @' + WORK_DOMAIN + ' company email first.';
+    return 'Verify your work email first.';
   }
   // "Invalid login credentials" whether the email is unknown or the password
   // is wrong. Saying which would tell a stranger who has an account.

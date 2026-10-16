@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react
 
 import { useSession } from '@/data/session';
 import type { Role } from '@/data/types';
+import { hasPhone, noPhones } from '@/lib/phones';
 import { color, font, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ShieldIcon } from '@/ui/icons';
 import { Avatar, Button, Callout, Field, Screen } from '@/ui/primitives';
@@ -27,6 +28,10 @@ export default function ProfileSetupScreen() {
   const ready = name.trim().length > 2 && initials.length >= 2;
 
   async function onSave() {
+    if (hasPhone(name)) {
+      setError(noPhones('your name'));
+      return;
+    }
     setBusy(true);
     setError(null);
     const result = await saveProfile({ name: name.trim(), initials, role });
@@ -156,9 +161,8 @@ export default function ProfileSetupScreen() {
 
       <Callout icon={<ShieldIcon />}>
         <Text variant="small" tone="muted">
-          A name and two initials is all this asks for. No photo, no phone
-          number, and no trail of where you have been: today is the only
-          evening this app knows about.
+          A name and two initials is all this asks for. No photo and no phone
+          number.
         </Text>
       </Callout>
 

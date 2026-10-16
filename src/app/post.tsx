@@ -8,6 +8,7 @@ import type { Destination } from '@/data/types';
 import type { Place } from '@/lib/places';
 import { CONTRIBUTION_NAIRA, EVENING_END_MIN, EVENING_START_MIN, naira } from '@/lib/config';
 import { loadLastOrigin, saveLastOrigin } from '@/lib/origin';
+import { hasPhone, noPhones } from '@/lib/phones';
 import { hhmm, nowMinutes } from '@/lib/time';
 import { color, font, LIME, PINE, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, CarIcon, ChevronIcon, PinIcon } from '@/ui/icons';
@@ -20,6 +21,8 @@ import { TripMap } from '@/ui/trip-map';
 
 const TOLERANCES = [15, 30, 45] as const;
 const SEATS = [1, 2, 3, 4] as const;
+/** The database's limit on a ride's note (trips.note). */
+const NOTE_MAX = 300;
 // Leaving times a driver can pick: 16:00 to 23:00.
 const EARLIEST = EVENING_START_MIN;
 const LATEST = EVENING_END_MIN;
@@ -53,9 +56,10 @@ export default function PostTripScreen() {
   const booked = already?.riders.length ?? 0;
   const seatOptions = SEATS.filter((n) => n >= Math.max(1, booked));
   const [seats, setSeats] = useState<number>(Math.max(already?.seatsTotal ?? 3, booked));
-  // A new ride cannot leave in the past, and after the last slot there is
-  // nothing left to post for tonight.
-  const earliest = already ? EARLIEST : firstSlot();
+  // A ride cannot be moved into the past, new or edited. An edit may keep a
+  // time that has already gone by, but not go further back than it.
+  // After the last slot there is nothing left to post for tonight.
+  const earliest = already ? Math.min(already.departMin, firstSlot()) : firstSlot();
   const tooLate = !already && nowMinutes() > LATEST;
   // The car comes from the driver's account, set once there. A ride posted
   // before that existed keeps whatever it was posted with.
@@ -66,7 +70,7 @@ export default function PostTripScreen() {
   // has, it stays free.
   const [paid, setPaid] = useState(Boolean(already?.contributionNaira));
   const lockedFree = Boolean(already && !already.contributionNaira && already.riders.length > 0);
-  const { payout, loading: payoutLoading, reload: reloadPayout } = usePayout(me?.id, paid);
+  const { payout, loading: payoutLoading, failed: payoutFailed, reload: reloadPayout } = usePayout(me?.id, paid);
   // Back from Account with details just saved: look again.
   useFocusEffect(
     useCallback(() => {
@@ -75,7 +79,11 @@ export default function PostTripScreen() {
   );
   // A paid ride needs somewhere to send the money. The database refuses one
   // without bank details too; this says so before the driver taps Post.
-  const needsBank = paid && !payoutLoading && !payout;
+  // A failed check is not "none saved": the driver is not told to add details
+  // they may already have, and Post stays open. The database still refuses a
+  // paid ride with no details, with its own sentence.
+  const needsBank = paid && !payoutLoading && !payoutFailed && !payout;
+  const notePhone = hasPhone(note);
   const [details, setDetails] = useState(Boolean(already?.note));
   // A new ride starts from the usual destination set in Account. Changing it
   // here changes tonight's ride only, never the default.
@@ -117,7 +125,7 @@ export default function PostTripScreen() {
   }
 
   async function submit() {
-    if (!routeReady || posting || tooLate) return;
+    if (!routeReady || posting || tooLate || notePhone) return;
     setPosting(true);
     clearError();
     const draft = {
@@ -191,7 +199,7 @@ export default function PostTripScreen() {
           <Button
             label={posting ? 'Saving' : already ? 'Save changes' : 'Post ride'}
             onPress={submit}
-            disabled={posting || !routeReady || tooLate || needsBank}
+            disabled={posting || !routeReady || tooLate || needsBank || notePhone}
           />
           {already ? (
             <Button label="Cancel this ride" kind="danger" disabled={posting} onPress={cancelRide} />
@@ -335,6 +343,12 @@ export default function PostTripScreen() {
             </Callout>
             <Button label="Add bank details" kind="secondary" arrow onPress={() => router.push('/you')} />
           </View>
+        ) : paid && payoutFailed ? (
+          <Pressable onPress={reloadPayout} accessibilityRole="button" style={s.needBank}>
+            <Text variant="small" tone="muted">
+              Could not check your bank details. Tap to try again.
+            </Text>
+          </Pressable>
         ) : null}
       </Field>
 
@@ -361,9 +375,19 @@ export default function PostTripScreen() {
             onChangeText={setNote}
             style={[s.input, s.inputTall]}
             multiline
+            maxLength={NOTE_MAX}
             placeholder="I wait five minutes, then go"
             placeholderTextColor={color.inkFaint}
           />
+          {notePhone ? (
+            <Text variant="small" tone="stop" style={s.noteError}>
+              {noPhones('the note')}
+            </Text>
+          ) : note.length > NOTE_MAX - 40 ? (
+            <Text variant="small" tone="faint" style={s.noteError}>
+              {note.length}/{NOTE_MAX}
+            </Text>
+          ) : null}
         </Field>
       ) : (
         <Pressable onPress={() => setDetails(true)} style={s.more} accessibilityRole="button">
@@ -387,7 +411,7 @@ export default function PostTripScreen() {
             current={origin?.name}
             onBack={() => setSearching(null)}
             onPick={pick}
-            privacy="Your starting point is on tonight's ride only, and is deleted with it. This phone remembers it for your next ride."
+            privacy="Riders on your ride see where you start. This phone remembers it for your next ride."
             offerHere
           />
         ) : (
@@ -397,7 +421,7 @@ export default function PostTripScreen() {
             current={destination?.name}
             onBack={() => setSearching(null)}
             onPick={pick}
-            privacy="Your destination is on tonight's ride only, and is deleted with it."
+            privacy="Riders on your ride see where you are going."
           />
         )}
         <StatusBand />
@@ -467,6 +491,7 @@ const s = themed(() =>
     color: color.ink,
   },
   inputTall: { minHeight: 88, textAlignVertical: 'top' },
+  noteError: { marginTop: space.xs },
   more: {
     flexDirection: 'row',
     alignItems: 'center',

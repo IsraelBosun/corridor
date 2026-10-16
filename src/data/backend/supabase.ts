@@ -251,4 +251,14 @@ export const supabaseBackend: Backend = {
       supabase.removeChannel(channel);
     };
   },
+
+  async reportPerson(tripId, reportedId, category, details) {
+    const { error } = await supabase.rpc('report_person', {
+      p_trip: tripId,
+      p_reported: reportedId,
+      p_category: category,
+      p_details: details,
+    });
+    fail(error);
+  },
 };

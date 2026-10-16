@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native';
 
 import { useSession } from '@/data/session';
-import { WORK_DOMAIN } from '@/lib/config';
 import { color, font, radius, space, themed } from '@/theme/tokens';
 import { AuthScreen } from '@/ui/auth-hero';
 import { Button } from '@/ui/primitives';
@@ -10,9 +9,13 @@ import { Text } from '@/ui/text';
 
 const CODE_LENGTH = 6;
 const RESEND_AFTER_S = 60;
+// Shape only. Whether the domain counts as work email is the server's call.
+const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * Prove you are a colleague: a code to your work inbox, typed back in.
+ * Prove you have a job: a code to your work inbox, typed back in. Any work
+ * domain is accepted; personal and throwaway providers are refused by the
+ * server.
  *
  * Shown after sign in whenever there is no verified work email, or the last
  * one is more than 60 days old. Someone who has left can no longer read that
@@ -22,7 +25,8 @@ export default function WorkEmailScreen() {
   const { membership, sendWorkCode, verifyWorkCode, signOut } = useSession();
   const lapsed = Boolean(membership?.workEmail);
 
-  const [handle, setHandle] = useState(membership?.workEmail?.split('@')[0] ?? '');
+  const [email, setEmail] = useState(membership?.workEmail ?? '');
+  const ready = LOOKS_LIKE_EMAIL.test(email.trim());
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,16 +42,16 @@ export default function WorkEmailScreen() {
   }, [wait]);
 
   async function send() {
-    if (busy || handle.trim().length < 2) return;
+    if (busy || !ready) return;
     setBusy(true);
     setError(null);
-    const result = await sendWorkCode(handle);
+    const result = await sendWorkCode(email);
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    setSentTo(`${handle.trim().toLowerCase()}@${WORK_DOMAIN}`);
+    setSentTo(email.trim().toLowerCase());
     setCode('');
     setWait(RESEND_AFTER_S);
     setTimeout(() => codeField.current?.focus(), 300);
@@ -65,11 +69,11 @@ export default function WorkEmailScreen() {
 
   return (
     <AuthScreen
-      title={lapsed ? 'Quick check.' : 'Confirm your company email.'}
+      title={lapsed ? 'Quick check.' : 'Confirm your work email.'}
       body={
         lapsed
-          ? 'Every 60 days we check your company email still works.'
-          : 'Corridor is for verified company staff only. We will send you a code.'
+          ? 'Every 60 days we check your work email still works.'
+          : 'Corridor is for people with a verified work email. We will send you a code.'
       }
       footer={
         <>
@@ -84,7 +88,7 @@ export default function WorkEmailScreen() {
             <Button
               label={busy ? 'Sending' : 'Send me a code'}
               onPress={send}
-              disabled={busy || handle.trim().length < 2}
+              disabled={busy || !ready}
               arrow={!busy}
             />
           )}
@@ -117,7 +121,7 @@ export default function WorkEmailScreen() {
               maxLength={CODE_LENGTH}
               returnKeyType="go"
               onSubmitEditing={verify}
-              accessibilityLabel="The code from your company email"
+              accessibilityLabel="The code from your work email"
             />
           </View>
           <View style={s.row}>
@@ -144,33 +148,29 @@ export default function WorkEmailScreen() {
         </>
       ) : (
         <>
-          {/*
-            The domain is shown, not typed. It makes the closed group visible
-            and removes the commonest way to mistype an address. It comes from
-            the environment so the employer's name never enters the repo.
-          */}
           <View style={[s.inputRow, error ? s.inputRowError : null]}>
             <TextInput
-              value={handle}
+              value={email}
               onChangeText={(t) => {
-                // People paste the whole address; keep the part before the @.
-                setHandle(t.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, ''));
+                setEmail(t.replace(/\s/g, ''));
                 if (error) setError(null);
               }}
               style={s.input}
-              placeholder="first.last"
+              placeholder="you@yourcompany.com"
               placeholderTextColor={color.inkFaint}
               autoCapitalize="none"
               autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
               keyboardType="email-address"
               returnKeyType="send"
               onSubmitEditing={send}
-              accessibilityLabel="The first part of your company email address"
+              accessibilityLabel="Your work email address"
             />
-            <Text variant="data" tone="faint" style={s.domain}>
-              @{WORK_DOMAIN}
-            </Text>
           </View>
+          <Text variant="small" tone="faint" style={s.hint}>
+            Personal addresses like Gmail or Yahoo will not work.
+          </Text>
         </>
       )}
 
@@ -218,7 +218,6 @@ const s = themed(() =>
       color: color.ink,
     },
     codeInput: { letterSpacing: 8, fontSize: 24, fontFamily: font.mono, textAlign: 'center' },
-    domain: { paddingLeft: space.xs },
     spinner: { marginTop: space.md },
     spacer: { flex: 1, minHeight: space.xl },
     privacy: { textAlign: 'center' },
