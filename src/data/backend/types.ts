@@ -118,6 +118,10 @@ export interface Backend {
   signIn(email: string, password: string): Promise<void>;
   /** needsConfirm when the project asks new accounts to confirm their email first. */
   signUp(email: string, password: string): Promise<{ needsConfirm: boolean }>;
+  /** Mails a reset code to the login email. Says nothing about whether the account exists. */
+  sendPasswordReset(email: string): Promise<void>;
+  /** Checks the reset code, which signs them in, then sets the new password. */
+  resetPassword(email: string, code: string, password: string): Promise<void>;
   signOut(): Promise<void>;
 
   // The work email that makes someone a member
@@ -128,6 +132,8 @@ export interface Backend {
   verifyWorkCode(code: string): Promise<void>;
   /** "I have left": forget the work address. The account itself stays. */
   forgetWorkEmail(): Promise<void>;
+  /** Deletes everything Corridor holds on this person. The login stays: other apps share it. */
+  deleteAccount(): Promise<void>;
   /** On the testers list: may switch riding and driving at any time. */
   isTester(): Promise<boolean>;
 

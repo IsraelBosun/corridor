@@ -63,6 +63,22 @@ export const supabaseBackend: Backend = {
     return { needsConfirm: !data.session };
   },
 
+  async sendPasswordReset(email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    fail(error);
+  },
+
+  // A code typed into the app, not a link: a link would have to open the app
+  // from the email, and often the email is read on another device.
+  async resetPassword(email, code, password) {
+    const { error: codeError } = await supabase.auth.verifyOtp({ email, token: code, type: 'recovery' });
+    fail(codeError);
+    // Signed in from here on. If the new password is refused, they are still
+    // in, and can change it again with another code.
+    const { error } = await supabase.auth.updateUser({ password });
+    fail(error);
+  },
+
   async membership() {
     const { data, error } = await supabase.rpc('membership');
     fail(error);
@@ -88,6 +104,11 @@ export const supabaseBackend: Backend = {
 
   async forgetWorkEmail() {
     const { error } = await supabase.rpc('forget_work_email');
+    fail(error);
+  },
+
+  async deleteAccount() {
+    const { error } = await supabase.rpc('delete_my_account');
     fail(error);
   },
 

@@ -41,7 +41,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export default function YouScreen() {
   const router = useRouter();
   const { me, role, myTrip, mySeat } = useStore();
-  const { email, signOut, setRole, tester } = useSession();
+  const { email, signOut, deleteAccount, setRole, tester } = useSession();
   const [error, setError] = useState<string | null>(null);
   useStatusBand(PINE);
 
@@ -95,6 +95,26 @@ export default function YouScreen() {
         { text: 'Sign out', style: 'destructive', onPress: signOut },
       ],
       'signout'
+    );
+  }
+
+  function confirmDelete() {
+    showDialog(
+      'Delete your Corridor account?',
+      'Your profile, rides, messages, bank details and company email are deleted for good. A private record of past rides is kept for safety for up to 90 days. Your login stays, because it also signs you in to our other apps.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setError(null);
+            const result = await deleteAccount();
+            if (!result.ok) setError(result.error);
+          },
+        },
+      ],
+      'alert'
     );
   }
 
@@ -177,6 +197,16 @@ export default function YouScreen() {
           <SignOutIcon size={22} />
           <Text variant="body" tone="stop" style={[s.flex, s.strong]}>
             {USING_LOCAL ? 'Sign out, or switch test account' : 'Sign out'}
+          </Text>
+        </Pressable>
+        <View style={s.groupLine} />
+        <Pressable
+          onPress={confirmDelete}
+          accessibilityRole="button"
+          style={({ pressed }) => [s.groupRow, pressed && s.pressed]}>
+          <AlertIcon />
+          <Text variant="body" tone="stop" style={[s.flex, s.strong]}>
+            Delete my account
           </Text>
         </Pressable>
       </View>

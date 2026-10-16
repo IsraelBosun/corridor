@@ -42,10 +42,16 @@ type SessionState = {
   signIn: (email: string, password: string) => Promise<Result>;
   /** A new account. needsConfirm: check the inbox, then sign in. */
   signUp: (email: string, password: string) => Promise<Result & { needsConfirm?: boolean }>;
+  /** Mails a code for a forgotten password. */
+  sendPasswordReset: (email: string) => Promise<Result>;
+  /** The code and a new password. On success they are signed in. */
+  resetPassword: (email: string, code: string, password: string) => Promise<Result>;
   /** The part before the @; the allowed domain is added here. */
   sendWorkCode: (email: string) => Promise<Result>;
   verifyWorkCode: (code: string) => Promise<Result>;
   forgetWorkEmail: () => Promise<Result>;
+  /** Deletes the Corridor account, then signs out. */
+  deleteAccount: () => Promise<Result>;
   saveProfile: (draft: ProfileDraft) => Promise<Result>;
   /**
    * Switching between driving and riding. Refused while tonight already ties
@@ -180,6 +186,27 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const sendPasswordReset = useCallback(async (email: string): Promise<Result> => {
+    try {
+      await backend.sendPasswordReset(email.trim().toLowerCase());
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: message(e) };
+    }
+  }, []);
+
+  const resetPassword = useCallback(
+    async (email: string, code: string, password: string): Promise<Result> => {
+      try {
+        await backend.resetPassword(email.trim().toLowerCase(), code.trim(), password);
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: message(e) };
+      }
+    },
+    []
+  );
+
   const sendWorkCode = useCallback(async (email: string): Promise<Result> => {
     const address = email.trim().toLowerCase();
     try {
@@ -274,6 +301,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     await backend.signOut();
   }, []);
 
+  // Delete first, then sign out, so a failure leaves them signed in to read why.
+  const deleteAccount = useCallback(async (): Promise<Result> => {
+    try {
+      await backend.deleteAccount();
+      await backend.signOut();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: message(e) };
+    }
+  }, []);
+
   const value = useMemo<SessionState>(
     () => ({
       loading,
@@ -285,9 +323,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       tester,
       signIn,
       signUp,
+      sendPasswordReset,
+      resetPassword,
       sendWorkCode,
       verifyWorkCode,
       forgetWorkEmail,
+      deleteAccount,
       saveProfile,
       setRole,
       setDropOff,
@@ -296,7 +337,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       profileError,
     }),
     [
-      loading, session, me, membership, tester, signIn, signUp, sendWorkCode, verifyWorkCode, forgetWorkEmail,
+      loading, session, me, membership, tester, signIn, signUp, sendPasswordReset, resetPassword, sendWorkCode, verifyWorkCode, forgetWorkEmail, deleteAccount,
       saveProfile, setRole, setDropOff, setCar, signOut, profileError,
     ]
   );
@@ -330,6 +371,14 @@ function readable(text: string): string {
   }
   if (m.includes('already registered') || m.includes('already been registered')) {
     return 'There is already an account with that email. Sign in instead.';
+  }
+  // A reset code that is mistyped, used, or past its hour.
+  if (m.includes('token has expired') || m.includes('otp') || m.includes('invalid token')) {
+    return 'That code is wrong or has run out. Ask for a new one.';
+  }
+  // Before the length check below, which "should be" would also match.
+  if (m.includes('should be different')) {
+    return 'Choose a password you have not used here before.';
   }
   if (m.includes('password should be') || m.includes('weak password')) {
     return 'Choose a longer password: at least 8 characters.';

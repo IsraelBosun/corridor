@@ -303,6 +303,14 @@ export const localBackend: Backend = {
     throw new Error('Test accounts are made from the account picker in local mode.');
   },
 
+  async sendPasswordReset() {
+    throw new Error('Test accounts have no password to reset.');
+  },
+
+  async resetPassword() {
+    throw new Error('Test accounts have no password to reset.');
+  },
+
   async signOut() {
     await setSession(null);
   },
@@ -324,6 +332,11 @@ export const localBackend: Backend = {
   async verifyWorkCode() {},
 
   async forgetWorkEmail() {},
+
+  // Test accounts belong to the picker, so leaving one is just signing out.
+  async deleteAccount() {
+    await setSession(null);
+  },
 
   async isTester() {
     return false;

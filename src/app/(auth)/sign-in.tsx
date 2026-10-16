@@ -13,6 +13,10 @@ import { Button } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 
 const MIN_PASSWORD = 8;
+const EMAIL = /^\S+@\S+\.\S+$/;
+/** Supabase sends 6 digits by default; the dashboard can raise it to 10. */
+const CODE_MIN = 6;
+const CODE_MAX = 10;
 
 /**
  * Personal email and password, or the test account picker in local mode.
@@ -46,11 +50,12 @@ export default function SignInScreen() {
  * the corridor is asked next, on its own screen, by a code sent to their work
  * email.
  *
- * Accounts are made by hand for now: there is no mail server to send a
- * confirmation link, so a sign up from here would wait for an email that never
- * comes. Set SELF_SIGN_UP once mail is set up.
+ * Sign up needs Supabase Auth to send the confirmation link, which it does
+ * through the custom SMTP set in the dashboard (Authentication, Emails). If
+ * that is ever removed, set SELF_SIGN_UP back to false: Supabase's own mailer
+ * only reaches the project's team, so everyone else would wait forever.
  */
-const SELF_SIGN_UP = false;
+const SELF_SIGN_UP = true;
 
 function EmailSignIn() {
   const { signIn, signUp } = useSession();
@@ -62,9 +67,10 @@ function EmailSignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkInbox, setCheckInbox] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const passwordField = useRef<TextInput>(null);
 
-  const emailOk = /^\S+@\S+\.\S+$/.test(email.trim());
+  const emailOk = EMAIL.test(email.trim());
   const ready = emailOk && password.length >= (creating ? MIN_PASSWORD : 1);
 
   async function onSubmit() {
@@ -88,6 +94,18 @@ function EmailSignIn() {
     setCreating((v) => !v);
     setError(null);
     setCheckInbox(false);
+  }
+
+  if (resetting) {
+    return (
+      <ResetPassword
+        initialEmail={email}
+        onBack={() => {
+          setResetting(false);
+          setError(null);
+        }}
+      />
+    );
   }
 
   return (
@@ -177,6 +195,18 @@ function EmailSignIn() {
         </Pressable>
       </View>
 
+      {!creating ? (
+        <Pressable
+          onPress={() => setResetting(true)}
+          accessibilityRole="button"
+          hitSlop={8}
+          style={({ pressed }) => [s.forgot, pressed && s.pressed]}>
+          <Text variant="small" tone="brand" style={s.bold}>
+            Forgot your password?
+          </Text>
+        </Pressable>
+      ) : null}
+
       {error ? (
         <Text variant="small" tone="stop" style={s.note}>
           {error}
@@ -184,6 +214,191 @@ function EmailSignIn() {
       ) : checkInbox ? (
         <Text variant="small" tone="go" style={s.note}>
           Check {email.trim()} for a confirmation link, then sign in.
+        </Text>
+      ) : null}
+    </AuthScreen>
+  );
+}
+
+/**
+ * A forgotten password, done by a code rather than a link. A link has to open
+ * the app from the email, and people often read their email on a different
+ * device. The code signs them in, then the new password is set, and the root
+ * layout moves on like any sign in.
+ */
+function ResetPassword({ initialEmail, onBack }: { initialEmail: string; onBack: () => void }) {
+  const { sendPasswordReset, resetPassword } = useSession();
+  const [email, setEmail] = useState(initialEmail.trim());
+  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [focus, setFocus] = useState<'email' | 'code' | 'password' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const codeField = useRef<TextInput>(null);
+  const passwordField = useRef<TextInput>(null);
+
+  const emailOk = EMAIL.test(email.trim());
+  const ready = sent ? code.length >= CODE_MIN && password.length >= MIN_PASSWORD : emailOk;
+
+  async function onSend() {
+    if (!emailOk || busy) return;
+    setBusy(true);
+    setError(null);
+    const result = await sendPasswordReset(email);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setSent(true);
+    setCode('');
+    setTimeout(() => codeField.current?.focus(), 300);
+  }
+
+  async function onReset() {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError(null);
+    const result = await resetPassword(email, code, password);
+    // On success this screen is already on its way out.
+    setBusy(false);
+    if (!result.ok) setError(result.error);
+  }
+
+  function clear() {
+    if (error) setError(null);
+  }
+
+  return (
+    <AuthScreen
+      title={sent ? 'Check your email.' : 'Reset your password.'}
+      body={
+        sent
+          ? `If there is an account for ${email.trim()}, a code is on its way. It works for one hour.`
+          : 'We will email a code to your personal email.'
+      }
+      footer={
+        <>
+          <Button
+            label={busy ? (sent ? 'Saving' : 'Sending') : sent ? 'Set new password' : 'Send me a code'}
+            onPress={sent ? onReset : onSend}
+            disabled={!ready || busy}
+            arrow={!busy}
+          />
+          <Pressable onPress={onBack} accessibilityRole="button" hitSlop={8} style={s.switch}>
+            <Text variant="small" tone="muted">
+              Remembered it?{' '}
+              <Text variant="small" tone="brand" style={s.bold}>
+                Sign in
+              </Text>
+            </Text>
+          </Pressable>
+        </>
+      }>
+      {!sent ? (
+        <>
+          <Text variant="eyebrow" style={s.label}>
+            Email
+          </Text>
+          <TextInput
+            value={email}
+            onChangeText={(t) => {
+              setEmail(t.replace(/\s/g, ''));
+              clear();
+            }}
+            onFocus={() => setFocus('email')}
+            onBlur={() => setFocus(null)}
+            style={[s.field, s.input, focus === 'email' && s.fieldFocus]}
+            placeholder="you@email.com"
+            placeholderTextColor={color.inkFaint}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="email"
+            keyboardType="email-address"
+            textContentType="emailAddress"
+            returnKeyType="send"
+            onSubmitEditing={onSend}
+            accessibilityLabel="Email"
+          />
+        </>
+      ) : (
+        <>
+          <Text variant="eyebrow" style={s.label}>
+            Code
+          </Text>
+          <TextInput
+            ref={codeField}
+            value={code}
+            onChangeText={(t) => {
+              setCode(t.replace(/[^0-9]/g, '').slice(0, CODE_MAX));
+              clear();
+            }}
+            onFocus={() => setFocus('code')}
+            onBlur={() => setFocus(null)}
+            style={[s.field, s.input, s.codeInput, focus === 'code' && s.fieldFocus]}
+            placeholder="000000"
+            placeholderTextColor={color.inkFaint}
+            keyboardType="number-pad"
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+            returnKeyType="next"
+            onSubmitEditing={() => passwordField.current?.focus()}
+            accessibilityLabel="The code from your email"
+          />
+
+          <Text variant="eyebrow" style={s.label}>
+            New password
+          </Text>
+          <View style={[s.field, s.row, focus === 'password' && s.fieldFocus]}>
+            <TextInput
+              ref={passwordField}
+              value={password}
+              onChangeText={(t) => {
+                setPassword(t);
+                clear();
+              }}
+              onFocus={() => setFocus('password')}
+              onBlur={() => setFocus(null)}
+              style={[s.input, s.flex]}
+              placeholder={`At least ${MIN_PASSWORD} characters`}
+              placeholderTextColor={color.inkFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+              secureTextEntry={!showPassword}
+              returnKeyType="go"
+              onSubmitEditing={onReset}
+              accessibilityLabel="New password"
+            />
+            <Pressable
+              onPress={() => setShowPassword((v) => !v)}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={showPassword ? 'Hide the password' : 'Show the password'}
+              style={({ pressed }) => pressed && s.pressed}>
+              <EyeIcon size={20} off={!showPassword} tint={color.inkFaint} />
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={onSend}
+            disabled={busy}
+            accessibilityRole="button"
+            hitSlop={8}
+            style={({ pressed }) => [s.forgot, pressed && s.pressed]}>
+            <Text variant="small" tone="brand" style={s.bold}>
+              Send a new code
+            </Text>
+          </Pressable>
+        </>
+      )}
+
+      {error ? (
+        <Text variant="small" tone="stop" style={s.note}>
+          {error}
         </Text>
       ) : null}
     </AuthScreen>
@@ -215,5 +430,7 @@ const s = themed(() =>
     },
     note: { marginTop: space.xs, paddingHorizontal: space.xs },
     switch: { alignSelf: 'center', paddingVertical: space.md },
+    forgot: { alignSelf: 'flex-end', marginTop: -space.sm, marginBottom: space.md, paddingHorizontal: space.xs },
+    codeInput: { letterSpacing: 8, fontSize: 24, fontFamily: font.mono, textAlign: 'center' },
   })
 );
