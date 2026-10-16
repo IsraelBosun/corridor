@@ -2,6 +2,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { endName, seatsOpen, startName, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
+import { naira } from '@/lib/config';
+import { distanceText } from '@/lib/nearby';
 import { hhmm, untilText, type Minutes } from '@/lib/time';
 import { color, elevation, radius, space, themed } from '@/theme/tokens';
 import { ClockIcon } from './icons';
@@ -24,6 +26,7 @@ export function TripRow({
   onPress,
   dim,
   cta,
+  pickupM,
 }: {
   trip: Trip;
   now: Minutes;
@@ -35,15 +38,26 @@ export function TripRow({
    * seat is taken after the safety note, so it never books from the list.
    */
   cta?: string;
+  /** Metres from the rider to where the ride starts, when known. */
+  pickupM?: number;
 }) {
   const { person } = useStore();
   const driver = person(trip.driverId);
   const open = seatsOpen(trip);
+  const seats = open === 0 ? 'Full' : open === 1 ? '1 seat left' : `${open} seats left`;
+  // Free or the flat contribution, on every card, so nobody books without knowing.
+  const price = trip.contributionNaira ? naira(trip.contributionNaira) : 'Free';
+  // The distance first, so a long place name never pushes it off the card.
+  const from =
+    pickupM === undefined
+      ? `From ${startName(trip)}`
+      : `Pickup ${distanceText(pickupM)} from you, at ${startName(trip)}`;
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
+      accessibilityLabel={`${driver.name.split(' ')[0]}, to ${endName(trip)}. ${from}. Leaves ${hhmm(trip.departMin)}, give or take ${trip.toleranceMin} minutes. ${seats}. ${trip.contributionNaira ? `${price} fuel contribution` : 'Free ride'}.`}
       style={({ pressed }) => [s.card, dim && s.dim, pressed && s.pressed]}>
       <View style={s.top}>
         <Avatar initials={driver.initials} size={48} />
@@ -51,8 +65,12 @@ export function TripRow({
           <Text variant="heading" numberOfLines={1} style={s.name}>
             {driver.name.split(' ')[0]}
           </Text>
+          {/* Two lines, so a long start never pushes the destination off the card. */}
           <Text variant="small" tone="muted" numberOfLines={1}>
-            From {startName(trip)} to {endName(trip)}
+            To {endName(trip)}
+          </Text>
+          <Text variant="small" tone="faint" numberOfLines={1}>
+            {from}
           </Text>
         </View>
         <View style={s.time}>
@@ -70,9 +88,14 @@ export function TripRow({
         <Text variant="small" style={[s.flex, s.bold]} numberOfLines={1}>
           {leavesText(trip.departMin, now)}
         </Text>
+        <View style={s.price}>
+          <Text variant="small" tone={trip.contributionNaira ? 'ink' : 'muted'} style={s.seatsText}>
+            {price}
+          </Text>
+        </View>
         <View style={[s.seats, open === 0 && s.seatsFull]}>
           <Text variant="small" tone={open === 0 ? 'faint' : 'accent'} style={s.seatsText}>
-            {open === 0 ? 'Full' : open === 1 ? '1 seat left' : `${open} seats left`}
+            {seats}
           </Text>
         </View>
       </View>
@@ -119,6 +142,12 @@ const s = themed(() =>
     paddingVertical: 3,
   },
   seatsFull: { backgroundColor: color.surface },
+  price: {
+    backgroundColor: color.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
   seatsText: { fontWeight: '700', fontSize: 13 },
   })
 );

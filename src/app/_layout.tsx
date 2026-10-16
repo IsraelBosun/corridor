@@ -13,7 +13,6 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { Platform, StatusBar as NativeStatusBar, StyleSheet, View } from 'react-native';
 
@@ -37,7 +36,6 @@ SplashScreen.preventAutoHideAsync();
 */
 if (Platform.OS === 'android') {
   NativeStatusBar.setBackgroundColor(color.brandDeep, false);
-  NativeStatusBar.setBarStyle('light-content', false);
 }
 
 export default function RootLayout() {
@@ -68,7 +66,6 @@ export default function RootLayout() {
           // root or the gestures are silently never delivered on Android.
           <GestureHandlerRootView style={s.flex}>
             <SessionProvider>
-              <StatusBar style="light" />
               <Gate scheme={scheme} />
               <StatusBand />
               <DialogHost />
@@ -82,18 +79,36 @@ export default function RootLayout() {
 }
 
 /**
- * Metro inlines EXPO_PUBLIC_* at build time, which means a running dev server
- * keeps serving a bundle compiled before the file existed. Saying that plainly
- * is worth a screen, because the symptom otherwise looks like broken code.
+ * A bundle without its keys. In the installed app that means a bad update,
+ * which the next one fixes, so people are told to restart rather than shown
+ * developer steps. In development the steps are what is needed: Metro inlines
+ * EXPO_PUBLIC_* at build time, so a running dev server keeps serving a bundle
+ * compiled before the file existed.
  */
 function NotConfigured() {
   useEffect(() => {
     SplashScreen.hideAsync();
   }, []);
 
+  if (!__DEV__) {
+    return (
+      <View style={s.setup}>
+        <StatusBand />
+        <Text variant="title">Corridor could not start.</Text>
+        <Text variant="body" tone="muted" style={s.gap}>
+          Something went wrong with the last update. Close Corridor completely and
+          open it again, and a fixed version will load.
+        </Text>
+        <Text variant="small" tone="faint" style={s.gap}>
+          If this screen is still here after two tries, let the person who shared
+          Corridor with you know.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={s.setup}>
-      <StatusBar style="light" />
       <StatusBand />
       <Text variant="title">Not configured yet.</Text>
       <Text variant="body" tone="muted" style={s.gap}>

@@ -8,7 +8,7 @@ import { AlertIcon, ShieldIcon } from '@/ui/icons';
 import { Avatar, Button, Callout, Field, Screen } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 
-/** "Israel Olatunbosun" becomes IO. Two letters, no photo, ever. */
+/** "Ada Okafor" becomes AO. Two letters, no photo, ever. */
 function initialsFrom(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '';
@@ -52,7 +52,7 @@ export default function ProfileSetupScreen() {
       </View>
 
       <Text variant="display" style={s.headline}>
-        How should people recognise you at the gate?
+        How should people recognise you at the pickup?
       </Text>
       <Text variant="body" tone="muted" style={s.sub}>
         Enough to find each other in a car park, and nothing more. There are no
@@ -79,7 +79,7 @@ export default function ProfileSetupScreen() {
             if (error) setError(null);
           }}
           style={s.input}
-          placeholder="Israel O."
+          placeholder="Ada O."
           placeholderTextColor={color.inkFaint}
           autoCapitalize="words"
           autoCorrect={false}

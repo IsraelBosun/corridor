@@ -1,11 +1,12 @@
 import * as SQLite from 'expo-sqlite';
 
-import { WORK_DOMAIN } from '@/lib/config';
+import { CONTRIBUTION_NAIRA, WORK_DOMAIN } from '@/lib/config';
 import type { Role } from '../types';
 import type {
   AuthSession,
   Backend,
   MessageRow,
+  PayoutRow,
   ProfileRow,
   TripFields,
   TripRow,
@@ -80,6 +81,7 @@ CREATE TABLE IF NOT EXISTS trips (
   origin_name TEXT,
   origin_lat REAL,
   origin_lng REAL,
+  contribution_naira INTEGER,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS trip_stops (
@@ -94,6 +96,12 @@ CREATE TABLE IF NOT EXISTS reservations (
   reserved_at TEXT NOT NULL,
   present_at TEXT,
   PRIMARY KEY (trip_id, rider_id)
+);
+CREATE TABLE IF NOT EXISTS payout_details (
+  user_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+  bank_name TEXT NOT NULL,
+  account_number TEXT NOT NULL,
+  account_name TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
@@ -125,6 +133,7 @@ function db(): Promise<SQLite.SQLiteDatabase> {
         'trips ADD COLUMN origin_name TEXT',
         'trips ADD COLUMN origin_lat REAL',
         'trips ADD COLUMN origin_lng REAL',
+        'trips ADD COLUMN contribution_naira INTEGER',
         'profiles ADD COLUMN car TEXT',
       ]) {
         try {
@@ -248,9 +257,19 @@ function checkFields(f: TripFields) {
   if (!f.origin_name || f.origin_lat === null || f.origin_lng === null) {
     throw new Error('Say where you are starting from so riders know where to meet you.');
   }
+  if (f.contribution_naira !== null && f.contribution_naira !== CONTRIBUTION_NAIRA) {
+    throw new Error('A ride is free or asks the one set contribution, nothing else.');
+  }
   if (!f.destination_name || f.destination_lat === null || f.destination_lng === null) {
     throw new Error('Say where you are going so riders can see if you pass them.');
   }
+}
+
+/** As paid_ride_has_payout on the server: no contribution without somewhere to send it. */
+async function needPayoutIfPaid(d: SQLite.SQLiteDatabase, driverId: string, f: TripFields) {
+  if (f.contribution_naira === null) return;
+  const has = await d.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM payout_details WHERE user_id = ?', driverId);
+  if ((has?.n ?? 0) === 0) throw new Error('Add your bank details in Account before asking for a fuel contribution.');
 }
 
 function tripCode(): string {
@@ -310,6 +329,53 @@ export const localBackend: Backend = {
     return false;
   },
 
+  async getPayout(userId) {
+    const me = await requireUser();
+    const d = await db();
+    // As payout_read on the server: your own, or a paid ride you are on tonight.
+    if (me !== userId) {
+      const owes = await d.getFirstAsync<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM trips t JOIN reservations r ON r.trip_id = t.id
+         WHERE t.driver_id = ? AND r.rider_id = ? AND t.contribution_naira IS NOT NULL
+           AND t.status IN ('posted', 'boarding', 'left')`,
+        userId, me
+      );
+      if ((owes?.n ?? 0) === 0) return null;
+    }
+    return d.getFirstAsync<PayoutRow>(
+      'SELECT bank_name, account_number, account_name FROM payout_details WHERE user_id = ?',
+      userId
+    );
+  },
+
+  async savePayout(userId, row) {
+    const me = await requireUser();
+    if (me !== userId) throw new Error('You can only change your own bank details.');
+    const d = await db();
+    if (row === null) {
+      // As payout_kept_for_paid_ride on the server.
+      const live = await d.getFirstAsync<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND contribution_naira IS NOT NULL
+           AND status IN ('posted', 'boarding', 'left')`,
+        me
+      );
+      if ((live?.n ?? 0) > 0) {
+        throw new Error('Your paid ride tonight shows these details to its riders. Make the ride free or wait until it is over to remove them.');
+      }
+      await d.runAsync('DELETE FROM payout_details WHERE user_id = ?', me);
+      return;
+    }
+    if (!/^[0-9]{10}$/.test(row.account_number)) throw new Error('An account number is ten digits.');
+    if (row.bank_name.length < 2 || row.bank_name.length > 40) throw new Error('Name the bank, in 40 characters or fewer.');
+    if (row.account_name.length < 2 || row.account_name.length > 60) throw new Error('Give the name on the account.');
+    await d.runAsync(
+      `INSERT INTO payout_details (user_id, bank_name, account_number, account_name) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET bank_name = excluded.bank_name,
+         account_number = excluded.account_number, account_name = excluded.account_name`,
+      me, row.bank_name, row.account_number, row.account_name
+    );
+  },
+
   async getProfile(userId) {
     const d = await db();
     return d.getFirstAsync<ProfileRow>('SELECT * FROM profiles WHERE id = ?', userId);
@@ -351,7 +417,7 @@ export const localBackend: Backend = {
   async listTrips() {
     const d = await db();
     const trips = await d.getAllAsync<Omit<TripRow, 'reservations' | 'announce_on_depart'> & { announce_on_depart: number }>(
-      'SELECT id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng FROM trips ORDER BY depart_at'
+      'SELECT id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira FROM trips ORDER BY depart_at'
     );
     const res = await d.getAllAsync<{ trip_id: string; rider_id: string; present_at: string | null }>(
       'SELECT trip_id, rider_id, present_at FROM reservations ORDER BY reserved_at'
@@ -374,6 +440,7 @@ export const localBackend: Backend = {
     if ((await roleOf(me)) !== 'driver') throw new Error('Only drivers can post a ride. Switch to driving in your account.');
     checkFields(fields);
     const d = await db();
+    await needPayoutIfPaid(d, me, fields);
     const id = uuid();
     await d.withExclusiveTransactionAsync(async (tx) => {
       // One live ride per driver, as the unique index does on the server.
@@ -385,12 +452,12 @@ export const localBackend: Backend = {
       await tx.runAsync(
         `INSERT INTO trips (id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, announce_on_depart,
                             destination_name, destination_lat, destination_lng,
-                            origin_name, origin_lat, origin_lng, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            origin_name, origin_lat, origin_lng, contribution_naira, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id, tripCode(), me, fields.depart_at, fields.tolerance_min, fields.seats_total,
         fields.vehicle, fields.note, fields.announce_on_depart ? 1 : 0,
         fields.destination_name, fields.destination_lat, fields.destination_lng,
-        fields.origin_name, fields.origin_lat, fields.origin_lng, now()
+        fields.origin_name, fields.origin_lat, fields.origin_lng, fields.contribution_naira, now()
       );
     });
     tripsChanged();
@@ -402,20 +469,26 @@ export const localBackend: Backend = {
     await ownTrip(tripId, me);
     checkFields(fields);
     const d = await db();
+    await needPayoutIfPaid(d, me, fields);
     await d.withExclusiveTransactionAsync(async (tx) => {
       const taken = await tx.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM reservations WHERE trip_id = ?', tripId);
       if (fields.seats_total < (taken?.n ?? 0)) {
         throw new Error('That leaves fewer seats than people already holding one. Release a seat first.');
       }
+      // As the trigger on the server: riders booked a free ride, so it stays free.
+      const was = await tx.getFirstAsync<{ c: number | null }>('SELECT contribution_naira AS c FROM trips WHERE id = ?', tripId);
+      if (fields.contribution_naira !== null && was?.c === null && (taken?.n ?? 0) > 0) {
+        throw new Error('Riders booked this ride as free, so it stays free tonight.');
+      }
       await tx.runAsync(
         `UPDATE trips SET depart_at = ?, tolerance_min = ?, seats_total = ?, vehicle = ?, note = ?, announce_on_depart = ?,
                           destination_name = ?, destination_lat = ?, destination_lng = ?,
-                          origin_name = ?, origin_lat = ?, origin_lng = ?
+                          origin_name = ?, origin_lat = ?, origin_lng = ?, contribution_naira = ?
          WHERE id = ?`,
         fields.depart_at, fields.tolerance_min, fields.seats_total, fields.vehicle, fields.note,
         fields.announce_on_depart ? 1 : 0,
         fields.destination_name, fields.destination_lat, fields.destination_lng,
-        fields.origin_name, fields.origin_lat, fields.origin_lng, tripId
+        fields.origin_name, fields.origin_lat, fields.origin_lng, fields.contribution_naira, tripId
       );
     });
     tripsChanged();

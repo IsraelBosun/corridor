@@ -1,7 +1,7 @@
 /**
  * Design tokens.
  *
- * Pine and lime on a warm off-white, with the map always at night. Pine is the
+ * Pine and lime on a warm off-white; the map follows the theme. Pine is the
  * brand: headers, selection, the shield. Lime is the one loud thing on a
  * screen, the main action and the route, with pine text on it. Two rules the
  * palette still enforces: green is only ever "confirmed", red is only ever
@@ -38,8 +38,8 @@ const light = {
   brandSoft: '#E1EBE5',
   /** Pine as text: links, eyebrows, small labels. A touch lighter to read. */
   brandInk: '#1D5A45',
-  /** The strip behind the system status bar, unless a screen asks otherwise. */
-  brandDeep: NIGHT,
+  /** The strip behind the system status bar, unless a screen asks otherwise. The page, by day. */
+  brandDeep: '#F5F5F2',
 
   /** Lime. The main action, the route, "your stop". */
   accent: LIME,

@@ -528,9 +528,11 @@ export function MapView({
   }
 
   const trouble = !MAPBOX_READY
-    ? 'No Mapbox token in this build. Restart with npx expo start --clear.'
+    ? __DEV__
+      ? 'No Mapbox token in this build. Restart with npx expo start --clear.'
+      : 'The map is not available in this version. Rides still work.'
     : tilesFailed
-      ? 'The map tiles did not load. Check your connection or the Mapbox token.'
+      ? 'The map did not load. Check your connection.'
       : null;
 
 
@@ -594,7 +596,7 @@ export function MapView({
             accessibilityRole="button"
             accessibilityLabel="Show where I am"
             style={({ pressed }) => [s.frameButton, pressed && s.pressed]}>
-            <LocateIcon size={18} tint={CHIP_INK} />
+            <LocateIcon size={20} tint={CHIP_INK} />
           </Pressable>
         ) : null}
         {showFrameButton && moved ? (
@@ -603,7 +605,7 @@ export function MapView({
             accessibilityRole="button"
             accessibilityLabel="Show the whole route"
             style={({ pressed }) => [s.frameButton, pressed && s.pressed]}>
-            <FrameIcon size={18} tint={CHIP_INK} />
+            <FrameIcon size={20} tint={CHIP_INK} />
           </Pressable>
         ) : null}
       </View>
@@ -891,10 +893,11 @@ const s = themed(() => {
     shadowOffset: { width: 0, height: 1 },
     elevation: 3,
   },
+  // 44 points: the smallest target a thumb hits reliably.
   frameButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: MAP.chip,
     alignItems: 'center',
     justifyContent: 'center',

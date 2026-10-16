@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
+  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,14 +28,17 @@ export function Screen({
   const Body = scroll ? ScrollView : View;
   return (
     <SafeAreaView style={s.screen} edges={['top', 'left', 'right', 'bottom']}>
-      <Body
-        style={s.flex}
-        contentContainerStyle={scroll ? s.scrollPad : undefined}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}>
-        {children}
-      </Body>
-      {footer ? <View style={s.footer}>{footer}</View> : null}
+      {/* Edge to edge: the keyboard no longer shrinks the window, so make room for it here. */}
+      <KeyboardAvoidingView style={s.flex} behavior="padding">
+        <Body
+          style={s.flex}
+          contentContainerStyle={scroll ? s.scrollPad : undefined}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}>
+          {children}
+        </Body>
+        {footer ? <View style={s.footer}>{footer}</View> : null}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

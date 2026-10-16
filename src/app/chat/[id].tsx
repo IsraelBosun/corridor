@@ -2,7 +2,6 @@ import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -76,11 +75,13 @@ export default function ChatScreen() {
   }
 
   return (
-    <SafeAreaView style={s.screen} edges={['top', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={s.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+    <SafeAreaView style={s.screen} edges={['top', 'left', 'right', 'bottom']}>
+      {/*
+        Padding on both platforms. The app draws edge to edge, so on Android
+        the window no longer shrinks for the keyboard and the composer would
+        sit underneath it.
+      */}
+      <KeyboardAvoidingView style={s.flex} behavior="padding">
         <View style={s.pad}>
           <ScreenHeader eyebrow={`Trip ${trip.code}`} />
         </View>

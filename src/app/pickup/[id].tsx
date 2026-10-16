@@ -3,9 +3,11 @@ import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { endName, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
+import { naira } from '@/lib/config';
 import { demoNow, hhmm, untilText } from '@/lib/time';
 import { color, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
+import { showDialog } from '@/ui/dialog';
 import { Avatar, Button, Callout, Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 import { TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
@@ -36,6 +38,45 @@ export default function PickupScreen() {
   const overdue = now >= trip.departMin && waiting.length > 0;
   const firstName = (pid: string) => person(pid).name.split(' ')[0];
 
+  // Setting off with someone still on their way leaves them behind, and it
+  // cannot be undone, so it is asked first. Everyone here just goes.
+  function start() {
+    if (waiting.length === 0) {
+      depart(trip!.id);
+      return;
+    }
+    const who = waiting.length === 1 ? firstName(waiting[0]) : `${waiting.length} riders`;
+    showDialog(
+      `Leave without ${who}?`,
+      `${waiting.length === 1 ? 'Their seat goes' : 'Their seats go'} back on the map so they can find another ride. This cannot be undone.`,
+      [
+        { text: 'Wait a bit', style: 'cancel' },
+        { text: `Leave without ${who}`, style: 'destructive', onPress: () => depart(trip!.id) },
+      ]
+    );
+  }
+
+  function cancel() {
+    const n = trip!.riders.length;
+    showDialog(
+      "Cancel tonight's ride?",
+      n === 0
+        ? 'It comes off the map straight away.'
+        : `${n === 1 ? 'The rider with a seat is' : `All ${n} riders with a seat are`} told at once, so they can find another way home.`,
+      [
+        { text: 'Keep the ride', style: 'cancel' },
+        {
+          text: 'Cancel the ride',
+          style: 'destructive',
+          onPress: async () => {
+            await cancelTrip(trip!.id);
+            router.replace('/');
+          },
+        },
+      ]
+    );
+  }
+
   const headline =
     trip.riders.length === 0
       ? 'No one has booked yet'
@@ -55,24 +96,18 @@ export default function PickupScreen() {
                   : `Leave without ${waiting.length} riders`
                 : 'Start trip'
             }
-            kind="go"
-            onPress={() => depart(trip.id)}
+            kind={overdue ? 'primary' : 'go'}
+            onPress={start}
           />
-          <Button
-            label="Cancel this ride"
-            kind="danger"
-            onPress={async () => {
-              await cancelTrip(trip.id);
-              router.replace('/');
-            }}
-          />
+          <Button label="Cancel this ride" kind="danger" onPress={cancel} />
         </>
       }>
-      <ScreenHeader title={`Pickup at ${startName(trip)}`} />
+      <ScreenHeader title="Pickup" />
 
       <Text variant="title">{headline}</Text>
       <Text variant="body" tone="muted" style={s.sub}>
-        Leaving {hhmm(trip.departMin)}, {untilText(trip.departMin, now)}
+        At {startName(trip)}. Leaving {hhmm(trip.departMin)}, {untilText(trip.departMin, now)}
+        {trip.contributionNaira ? `. Each rider pays you ${naira(trip.contributionNaira)} as they get in.` : ''}
       </Text>
 
       {/* Where everyone gets off, before anyone gets in. */}
@@ -240,7 +275,7 @@ const s = themed(() =>
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: color.line,
   },
-  riderLast: {},
+  riderLast: { borderBottomWidth: 0 },
   check: {
     width: 30,
     height: 30,

@@ -1,4 +1,4 @@
-import { searchPlaces as searchMapbox, type LngLat, type Place } from './mapbox';
+import { MAPBOX_TOKEN, searchPlaces as searchMapbox, type LngLat, type Place } from './mapbox';
 
 /**
  * Place search for "where are you getting off".
@@ -98,4 +98,64 @@ export async function searchPlaces(query: string, near: LngLat, signal?: AbortSi
     if (!out.some((o) => sameAs(o, p))) out.push(p);
   }
   return out.slice(0, LIMIT);
+}
+
+/**
+ * A name for where the phone is right now, for "use my current location".
+ *
+ * OpenStreetMap first, because it names the places people say out loud (an
+ * estate, a mall, a club); Mapbox for the street when that has nothing. Never
+ * a house number: a driver offering a ride from home must not publish their
+ * address to everyone browsing. If neither answers, the point is still used,
+ * under a plain name the driver can see before posting.
+ */
+export async function nameForPoint(point: LngLat, signal?: AbortSignal): Promise<Place> {
+  const fallback: Place = {
+    id: 'here',
+    name: 'My location',
+    context: '',
+    lat: point.lat,
+    lng: point.lng,
+    isStop: false,
+  };
+
+  try {
+    const res = await fetch(
+      `https://photon.komoot.io/reverse?lat=${point.lat}&lon=${point.lng}&lang=en&limit=1`,
+      { signal }
+    );
+    if (res.ok) {
+      const body = (await res.json()) as { features?: PhotonFeature[] };
+      const p = body.features?.[0]?.properties;
+      const name = p?.name ?? p?.street;
+      if (name) {
+        const area = [p?.district ?? p?.locality, p?.city ?? p?.county].filter(
+          (part): part is string => Boolean(part) && part !== name
+        );
+        return { ...fallback, name: `Near ${name}`, context: area.join(', ') };
+      }
+    }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e;
+  }
+
+  try {
+    const url =
+      'https://api.mapbox.com/search/geocode/v6/reverse' +
+      `?longitude=${point.lng}&latitude=${point.lat}` +
+      '&types=street,neighborhood,locality&limit=1' +
+      `&access_token=${MAPBOX_TOKEN}`;
+    const res = await fetch(url, { signal });
+    if (res.ok) {
+      const body = (await res.json()) as {
+        features?: { properties?: { name?: string; place_formatted?: string } }[];
+      };
+      const f = body.features?.[0]?.properties;
+      if (f?.name) return { ...fallback, name: `Near ${f.name}`, context: f.place_formatted ?? '' };
+    }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e;
+  }
+
+  return fallback;
 }

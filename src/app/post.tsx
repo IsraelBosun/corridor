@@ -1,15 +1,17 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
+import { usePayout } from '@/data/payout';
 import { useStore } from '@/data/store';
 import type { Destination } from '@/data/types';
 import type { Place } from '@/lib/places';
-import { EVENING_END_MIN, EVENING_START_MIN } from '@/lib/config';
+import { CONTRIBUTION_NAIRA, EVENING_END_MIN, EVENING_START_MIN, naira } from '@/lib/config';
 import { loadLastOrigin, saveLastOrigin } from '@/lib/origin';
-import { hhmm } from '@/lib/time';
+import { hhmm, nowMinutes } from '@/lib/time';
 import { color, font, LIME, PINE, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, CarIcon, ChevronIcon, PinIcon } from '@/ui/icons';
+import { showDialog } from '@/ui/dialog';
 import { Button, Callout, Field, Screen, ScreenHeader, TileRow } from '@/ui/primitives';
 import { PlaceSearch } from '@/ui/place-search';
 import { StatusBand } from '@/ui/status-band';
@@ -24,8 +26,13 @@ const LATEST = EVENING_END_MIN;
 
 /** Round up to the next quarter hour, inside the evening window. */
 function nextSlot(): number {
-  const d = new Date();
-  const m = Math.ceil((d.getHours() * 60 + d.getMinutes()) / 15) * 15;
+  const m = Math.ceil(nowMinutes() / 15) * 15;
+  return Math.min(LATEST, Math.max(EARLIEST, m));
+}
+
+/** The earliest time a new ride can be set to: not before now, rounded down to the quarter. */
+function firstSlot(): number {
+  const m = Math.floor(nowMinutes() / 15) * 15;
   return Math.min(LATEST, Math.max(EARLIEST, m));
 }
 
@@ -42,11 +49,33 @@ export default function PostTripScreen() {
   const [posting, setPosting] = useState(false);
   const [departMin, setDepartMin] = useState(already?.departMin ?? nextSlot());
   const [toleranceMin, setToleranceMin] = useState<number>(already?.toleranceMin ?? 15);
-  const [seats, setSeats] = useState<number>(already?.seatsTotal ?? 3);
+  // Seats already taken cannot be taken away by an edit.
+  const booked = already?.riders.length ?? 0;
+  const seatOptions = SEATS.filter((n) => n >= Math.max(1, booked));
+  const [seats, setSeats] = useState<number>(Math.max(already?.seatsTotal ?? 3, booked));
+  // A new ride cannot leave in the past, and after the last slot there is
+  // nothing left to post for tonight.
+  const earliest = already ? EARLIEST : firstSlot();
+  const tooLate = !already && nowMinutes() > LATEST;
   // The car comes from the driver's account, set once there. A ride posted
   // before that existed keeps whatever it was posted with.
   const vehicle = me?.car ?? already?.vehicle ?? '';
   const [note, setNote] = useState(already?.note ?? '');
+  // Free, or the one flat contribution Corridor sets. Never an amount the
+  // driver types. Riders booked a free ride on those terms, so once anyone
+  // has, it stays free.
+  const [paid, setPaid] = useState(Boolean(already?.contributionNaira));
+  const lockedFree = Boolean(already && !already.contributionNaira && already.riders.length > 0);
+  const { payout, loading: payoutLoading, reload: reloadPayout } = usePayout(me?.id, paid);
+  // Back from Account with details just saved: look again.
+  useFocusEffect(
+    useCallback(() => {
+      reloadPayout();
+    }, [reloadPayout])
+  );
+  // A paid ride needs somewhere to send the money. The database refuses one
+  // without bank details too; this says so before the driver taps Post.
+  const needsBank = paid && !payoutLoading && !payout;
   const [details, setDetails] = useState(Boolean(already?.note));
   // A new ride starts from the usual destination set in Account. Changing it
   // here changes tonight's ride only, never the default.
@@ -88,7 +117,7 @@ export default function PostTripScreen() {
   }
 
   async function submit() {
-    if (!routeReady || posting) return;
+    if (!routeReady || posting || tooLate) return;
     setPosting(true);
     clearError();
     const draft = {
@@ -100,6 +129,7 @@ export default function PostTripScreen() {
       note,
       destination,
       announceOnDepart: already?.announceOnDepart ?? true,
+      contributionNaira: paid ? CONTRIBUTION_NAIRA : undefined,
     };
     // Seats people already hold survive an edit. Changing a time is an
     // update, never a second row.
@@ -110,12 +140,28 @@ export default function PostTripScreen() {
     if (ok) close();
   }
 
-  async function cancelRide() {
+  function cancelRide() {
     if (!already || posting) return;
-    setPosting(true);
-    await cancelTrip(already.id);
-    setPosting(false);
-    close();
+    const n = already.riders.length;
+    showDialog(
+      "Cancel tonight's ride?",
+      n === 0
+        ? 'It comes off the map straight away.'
+        : `${n === 1 ? 'The rider with a seat is' : `All ${n} riders with a seat are`} told at once, so they can find another way home.`,
+      [
+        { text: 'Keep the ride', style: 'cancel' },
+        {
+          text: 'Cancel the ride',
+          style: 'destructive',
+          onPress: async () => {
+            setPosting(true);
+            await cancelTrip(already.id);
+            setPosting(false);
+            close();
+          },
+        },
+      ]
+    );
   }
 
   // Posting is a driver's job. A passenger only lands here from an old link.
@@ -145,7 +191,7 @@ export default function PostTripScreen() {
           <Button
             label={posting ? 'Saving' : already ? 'Save changes' : 'Post ride'}
             onPress={submit}
-            disabled={posting || !routeReady}
+            disabled={posting || !routeReady || tooLate || needsBank}
           />
           {already ? (
             <Button label="Cancel this ride" kind="danger" disabled={posting} onPress={cancelRide} />
@@ -153,6 +199,15 @@ export default function PostTripScreen() {
         </>
       }>
       <ScreenHeader title={already ? 'Edit ride' : 'Offer a ride'} icon="close" onBack={close} />
+
+      {tooLate ? (
+        <Callout icon={<AlertIcon />}>
+          <Text variant="small" tone="muted">
+            Rides can leave up to {hhmm(LATEST)}, so tonight is over. Come back tomorrow
+            afternoon to post.
+          </Text>
+        </Callout>
+      ) : null}
 
       {already && already.riders.length > 0 ? (
         <Callout>
@@ -220,18 +275,24 @@ export default function PostTripScreen() {
       <Field label="Leaving around">
         <View style={s.time}>
           <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Fifteen minutes earlier"
-            onPress={() => setDepartMin((m) => Math.max(EARLIEST, m - 15))}
-            style={({ pressed }) => [s.step, pressed && s.pressed]}>
+            accessibilityState={{ disabled: departMin <= earliest }}
+            disabled={departMin <= earliest}
+            onPress={() => setDepartMin((m) => Math.max(earliest, m - 15))}
+            style={({ pressed }) => [s.step, departMin <= earliest && s.stepOff, pressed && s.pressed]}>
             <Text variant="title" style={s.stepMinus}>−</Text>
           </Pressable>
-          <Text variant="display" style={s.timeText}>
+          <Text variant="display" style={s.timeText} accessibilityLabel={`Leaving around ${hhmm(departMin)}`}>
             {hhmm(departMin)}
           </Text>
           <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Fifteen minutes later"
+            accessibilityState={{ disabled: departMin >= LATEST }}
+            disabled={departMin >= LATEST}
             onPress={() => setDepartMin((m) => Math.min(LATEST, m + 15))}
-            style={({ pressed }) => [s.step, s.stepPlus, pressed && s.pressed]}>
+            style={({ pressed }) => [s.step, s.stepPlus, departMin >= LATEST && s.stepOff, pressed && s.pressed]}>
             <Text variant="title" style={s.stepPlusText}>+</Text>
           </Pressable>
         </View>
@@ -241,8 +302,40 @@ export default function PostTripScreen() {
         <TileRow options={TOLERANCES} value={toleranceMin} onChange={setToleranceMin} render={(v) => `${v} min`} />
       </Field>
 
-      <Field label="Seats">
-        <TileRow options={SEATS} value={seats} onChange={setSeats} />
+      <Field
+        label="Seats"
+        hint={booked > 0 ? `${booked} ${booked === 1 ? 'is' : 'are'} already taken, so you cannot go below that.` : undefined}>
+        <TileRow options={seatOptions} value={seats} onChange={setSeats} />
+      </Field>
+
+      <Field
+        label="Fuel contribution"
+        hint={
+          lockedFree
+            ? 'Riders booked this ride as free, so it stays free tonight.'
+            : paid
+              ? needsBank
+                ? undefined
+                : `Each rider pays you ${naira(CONTRIBUTION_NAIRA)} directly, in cash or by transfer, to ${payout?.bankName ?? 'your account'}. Corridor never handles it.`
+              : 'Riders pay nothing. You can ask for a contribution on any ride before anyone books.'
+        }>
+        <TileRow
+          options={lockedFree ? (['free'] as const) : (['free', 'paid'] as const)}
+          value={paid ? 'paid' : 'free'}
+          onChange={(v) => setPaid(v === 'paid')}
+          render={(v) => (v === 'free' ? 'Free' : `${naira(CONTRIBUTION_NAIRA)} each`)}
+        />
+        {needsBank ? (
+          <View style={s.needBank}>
+            <Callout tone="stop" icon={<AlertIcon />}>
+              <Text variant="small" tone="muted">
+                To ask for {naira(CONTRIBUTION_NAIRA)}, add the account riders should pay into. It
+                takes a minute, and you only do it once.
+              </Text>
+            </Callout>
+            <Button label="Add bank details" kind="secondary" arrow onPress={() => router.push('/you')} />
+          </View>
+        ) : null}
       </Field>
 
       <Field label="Your car" hint="From your account. Only riders with a seat see it.">
@@ -268,7 +361,7 @@ export default function PostTripScreen() {
             onChangeText={setNote}
             style={[s.input, s.inputTall]}
             multiline
-            placeholder="I wait five minutes at the gate"
+            placeholder="I wait five minutes, then go"
             placeholderTextColor={color.inkFaint}
           />
         </Field>
@@ -295,6 +388,7 @@ export default function PostTripScreen() {
             onBack={() => setSearching(null)}
             onPick={pick}
             privacy="Your starting point is on tonight's ride only, and is deleted with it. This phone remembers it for your next ride."
+            offerHere
           />
         ) : (
           <PlaceSearch
@@ -359,6 +453,8 @@ const s = themed(() =>
   stepMinus: { color: '#FFFFFF' },
   stepPlus: { backgroundColor: LIME },
   stepPlusText: { color: PINE },
+  stepOff: { opacity: 0.35 },
+  needBank: { gap: space.sm, marginTop: space.sm },
   input: {
     backgroundColor: color.surface,
     borderWidth: 1,

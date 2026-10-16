@@ -78,8 +78,11 @@ export function ThemeProvider({ children }: { children: (scheme: Scheme) => Reac
 
   useEffect(() => {
     // Native pieces (alerts, the keyboard, the window behind the app) follow
-    // the same choice. "unspecified" hands them back to the phone.
-    Appearance.setColorScheme(mode === 'system' ? 'unspecified' : mode);
+    // the same choice. "unspecified" hands them back to the phone. Web has no
+    // native pieces to tell, and no such function.
+    if (typeof Appearance.setColorScheme === 'function') {
+      Appearance.setColorScheme(mode === 'system' ? 'unspecified' : mode);
+    }
   }, [mode]);
 
   useEffect(() => {

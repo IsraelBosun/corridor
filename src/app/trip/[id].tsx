@@ -3,12 +3,17 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { usePayout } from '@/data/payout';
 import { useSession } from '@/data/session';
 import { endName, seatsOpen, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
-import { demoNow, hhmm, untilText } from '@/lib/time';
+import { naira } from '@/lib/config';
+import { useMyLocation } from '@/lib/location';
+import { NEAR_PICKUP_M, pickupMetres } from '@/lib/nearby';
+import { demoNow, hhmm, untilHeading } from '@/lib/time';
 import { color, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, BackIcon, CarIcon, ChatIcon, CheckIcon } from '@/ui/icons';
+import { showDialog } from '@/ui/dialog';
 import { Avatar, Button, Callout, Row, RoundButton, Screen, ScreenHeader } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 import { TripMap } from '@/ui/trip-map';
@@ -38,6 +43,14 @@ export default function TripScreen() {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const now = demoNow();
+  // The driver's bank details, for a rider holding a seat on a paid ride. The
+  // database answers only them; anyone else gets nothing back.
+  const holding = Boolean(me && trip?.riders.includes(me.id));
+  const { payout } = usePayout(
+    trip?.driverId,
+    holding && Boolean(trip?.contributionNaira) && trip?.status !== 'cancelled',
+    trip?.riders.join(',')
+  );
 
   if (!trip) {
     return (
@@ -99,8 +112,8 @@ export default function TripScreen() {
               ? {
                   // The app knows this person is a tester, so the database's
                   // booking rule is the older one that predates testers.
-                  title: 'The database refused your own ride.',
-                  body: 'You are on the testers list, but the booking rule in the database is out of date. Rerun the testers migration.',
+                  title: 'Your own ride could not be booked.',
+                  body: 'You are on the testers list, but the server has not caught up with that yet. Let whoever runs Corridor know.',
                 }
               : {
                   title: 'That seat could not be reserved.',
@@ -137,7 +150,7 @@ export default function TripScreen() {
             </>
           ) : (
             <>
-              <Text variant="title">{untilText(trip.departMin, now)}</Text>
+              <Text variant="title">{untilHeading(trip.departMin, now)}</Text>
               <Text variant="body" tone="muted" style={s.sub}>
                 Leaves {hhmm(trip.departMin)}, give or take {trip.toleranceMin} min
               </Text>
@@ -168,12 +181,15 @@ export default function TripScreen() {
           </View>
 
           {dropOff && passes === false ? (
-            <Text variant="small" tone="stop" style={s.warn}>
+            <Text variant="small" tone="muted" style={s.warn}>
               This ride does not pass {dropOffName}.
             </Text>
           ) : null}
 
-          <View style={s.driver}>
+          <View
+            style={s.driver}
+            accessible
+            accessibilityLabel={`Driven by ${driver.name}. ${open === 0 ? 'Full' : `${open} of ${trip.seatsTotal} seats free`}`}>
             <Avatar initials={driver.initials} size={52} />
             <View style={s.flex}>
               <Text variant="heading">{driver.name}</Text>
@@ -184,7 +200,7 @@ export default function TripScreen() {
               ) : null}
             </View>
             <View style={s.seatBadge}>
-              <Text variant="small" tone={open === 0 ? 'faint' : 'go'} style={s.bold}>
+              <Text variant="small" tone={open === 0 ? 'faint' : 'accent'} style={s.bold}>
                 {open === 0 ? 'Full' : `${open} of ${trip.seatsTotal} free`}
               </Text>
             </View>
@@ -195,6 +211,41 @@ export default function TripScreen() {
               <Text variant="body">{trip.note}</Text>
             </View>
           ) : null}
+
+          {/* The terms, before the button that accepts them. */}
+          {trip.contributionNaira ? (
+            <Callout>
+              <Text variant="body" style={s.bold}>
+                {naira(trip.contributionNaira)} fuel contribution
+              </Text>
+              <Text variant="small" tone="muted">
+                {mine ? 'Pay' : 'If you take a seat, pay'} {driver.name.split(' ')[0]} directly when you
+                get in, in cash or by transfer. Corridor never handles money.
+              </Text>
+              {mine && payout ? (
+                <View style={s.bank}>
+                  <Text variant="small" tone="muted">
+                    {payout.bankName}
+                  </Text>
+                  {/* Long press to copy. */}
+                  <Text variant="dataLarge" selectable style={s.accountNumber}>
+                    {payout.accountNumber}
+                  </Text>
+                  <Text variant="small" style={s.bold} selectable>
+                    {payout.accountName}
+                  </Text>
+                </View>
+              ) : mine ? (
+                <Text variant="small" tone="muted" style={s.bankNone}>
+                  {driver.name.split(' ')[0]} has not added an account, so bring cash.
+                </Text>
+              ) : null}
+            </Callout>
+          ) : (
+            <Text variant="small" tone="muted">
+              A free ride. Nothing to pay.
+            </Text>
+          )}
 
           {mine ? (
             <View>
@@ -247,7 +298,20 @@ export default function TripScreen() {
                   onPress={() => me && markPresent(trip.id, me.id)}
                 />
               )}
-              <Button label="Give up my seat" kind="danger" onPress={() => releaseSeat(trip.id)} />
+              <Button
+                label="Give up my seat"
+                kind="danger"
+                onPress={() =>
+                  showDialog(
+                    'Give up your seat?',
+                    `${driver.name.split(' ')[0]} is told, and the seat goes back on the map for someone else.`,
+                    [
+                      { text: 'Keep my seat', style: 'cancel' },
+                      { text: 'Give it up', style: 'destructive', onPress: () => releaseSeat(trip.id) },
+                    ]
+                  )
+                }
+              />
             </>
           ) : role === 'driver' ? (
             <Text variant="small" tone="muted" center style={s.driverNote}>
@@ -256,7 +320,15 @@ export default function TripScreen() {
             </Text>
           ) : (
             <Button
-              label={open === 0 ? 'No seats left' : busy ? 'Reserving' : 'Reserve a seat'}
+              label={
+                open === 0
+                  ? 'No seats left'
+                  : busy
+                    ? 'Reserving'
+                    : trip.contributionNaira
+                      ? `Reserve a seat, ${naira(trip.contributionNaira)}`
+                      : 'Reserve a seat'
+              }
               onPress={onReserve}
               disabled={open === 0 || busy}
             />
@@ -304,6 +376,12 @@ function CancelledTrip({ trip }: { trip: Trip }) {
   const router = useRouter();
   const { trips, serves, person, dropOff } = useStore();
   const now = demoNow();
+  const here = useMyLocation();
+  // Same rule as the home list: a pickup you can walk to, on a road past your stop.
+  const near = (t: Trip) => {
+    const m = pickupMetres(t, here);
+    return m === undefined || m <= NEAR_PICKUP_M;
+  };
 
   const alternatives = trips
     .filter(
@@ -312,6 +390,7 @@ function CancelledTrip({ trip }: { trip: Trip }) {
         (t.status === 'posted' || t.status === 'boarding') &&
         seatsOpen(t) > 0 &&
         (!dropOff || serves(t)) &&
+        near(t) &&
         t.departMin >= now - 10
     )
     .sort((a, b) => a.departMin - b.departMin)
@@ -322,7 +401,7 @@ function CancelledTrip({ trip }: { trip: Trip }) {
   return (
     <Screen
       footer={<Button label="Back to the map" kind="secondary" onPress={() => router.replace('/')} />}>
-      <ScreenHeader title={`Ride ${trip.code}`} />
+      <ScreenHeader title="Ride cancelled" />
 
       <Callout tone="stop" icon={<AlertIcon />}>
         <Text variant="body" tone="stop" style={s.bold}>
@@ -352,6 +431,7 @@ function CancelledTrip({ trip }: { trip: Trip }) {
           key={alt.id}
           trip={alt}
           now={now}
+          pickupM={pickupMetres(alt, here)}
           onPress={() => router.replace({ pathname: '/trip/[id]', params: { id: alt.id } })}
         />
       ))}
@@ -402,7 +482,7 @@ const s = themed(() =>
   },
   driver: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.xs },
   seatBadge: {
-    backgroundColor: color.goSoft,
+    backgroundColor: color.accentSoft,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -422,6 +502,14 @@ const s = themed(() =>
     borderTopColor: color.line,
     gap: space.xs,
   },
+  bank: {
+    marginTop: space.md,
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+  },
+  bankNone: { marginTop: space.sm },
+  accountNumber: { letterSpacing: 1.5 },
   checked: {
     flexDirection: 'row',
     alignItems: 'center',

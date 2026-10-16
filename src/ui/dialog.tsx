@@ -157,7 +157,7 @@ function Glyph({ icon, danger }: { icon: DialogIcon; danger: boolean }) {
 
 const s = themed(() =>
   StyleSheet.create({
-    backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(4, 20, 24, 0.55)' },
+    backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(13, 24, 20, 0.55)' },
     wrap: { flex: 1, justifyContent: 'flex-end' },
     sheet: {
       backgroundColor: color.bg,

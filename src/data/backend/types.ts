@@ -62,6 +62,8 @@ export type TripRow = {
   origin_name: string | null;
   origin_lat: number | null;
   origin_lng: number | null;
+  /** Naira each rider pays the driver directly, or null for a free ride. */
+  contribution_naira: number | null;
   reservations: { rider_id: string; present_at: string | null }[];
 };
 
@@ -87,9 +89,23 @@ export type TripFields = {
   origin_name: string | null;
   origin_lat: number | null;
   origin_lng: number | null;
+  /** Null for a free ride. The database accepts only the one flat figure. */
+  contribution_naira: number | null;
 };
 
 export type ProfilePatch = Partial<Omit<ProfileRow, 'id'>>;
+
+/**
+ * Where a driver takes fuel contributions by transfer. Set once on their
+ * account. Readable only by the driver and by riders holding a seat tonight on
+ * that driver's paid ride; the database enforces that, not the screens.
+ */
+export type PayoutRow = {
+  bank_name: string;
+  /** Ten digits. */
+  account_number: string;
+  account_name: string;
+};
 
 export interface Backend {
   /** 'local' shows the test account tools; 'supabase' is the real thing. */
@@ -121,6 +137,12 @@ export interface Backend {
   saveProfile(row: Pick<ProfileRow, 'id' | 'handle' | 'initials' | 'display_name' | 'role'>): Promise<void>;
   updateProfile(userId: string, patch: ProfilePatch): Promise<void>;
   listProfiles(): Promise<ProfileRow[]>;
+
+  // Bank details for fuel contributions
+  /** Null when there are none, or when the caller is not allowed to see them. */
+  getPayout(userId: string): Promise<PayoutRow | null>;
+  /** The signed in person's own. Null removes them. */
+  savePayout(userId: string, row: PayoutRow | null): Promise<void>;
 
   // The corridor
   listTrips(): Promise<TripRow[]>;

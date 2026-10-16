@@ -20,4 +20,15 @@ config.server.enhanceMiddleware = (middleware) => {
   };
 };
 
+// expo-secure-store has no web implementation; every call throws in a
+// browser. On web only, use the localStorage stand-in in src/lib.
+const path = require('path');
+const resolveDefault = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web' && moduleName === 'expo-secure-store') {
+    return { type: 'sourceFile', filePath: path.join(__dirname, 'src/lib/secure-store.web.ts') };
+  }
+  return (resolveDefault ?? context.resolveRequest)(context, moduleName, platform);
+};
+
 module.exports = config;

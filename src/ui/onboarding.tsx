@@ -14,6 +14,7 @@ import Svg, { Circle, G, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import { LIME, NIGHT, PINE, radius, space, themed } from '@/theme/tokens';
 import { ArrowIcon } from './icons';
+import { useStatusBand } from './status-band';
 import { Text } from './text';
 
 /*
@@ -35,8 +36,8 @@ const BAND = '#24493A';
 const SLIDES = [
   {
     key: 'ride',
-    lead: 'Seats home with',
-    hi: 'colleagues.',
+    lead: 'Seats home with people',
+    hi: 'going your way.',
     body: 'Drivers heading your way post a ride after work. Grab a free seat and leave the office together.',
     Art: RouteArt,
   },
@@ -49,9 +50,9 @@ const SLIDES = [
   },
   {
     key: 'trust',
-    lead: 'Only people',
-    hi: 'you work with.',
-    body: 'Everyone confirms a work email, checked again every 60 days. No money changes hands, ever.',
+    lead: 'Only verified',
+    hi: 'company emails.',
+    body: 'Everyone confirms their company email with a code, and it is checked again every 60 days. Rides are free unless the driver asks for a fixed fuel contribution, paid to them directly.',
     Art: TrustArt,
   },
 ] as const;
@@ -62,6 +63,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const ref = useAnimatedRef<Animated.ScrollView>();
   const [index, setIndex] = useState(0);
   const last = index === SLIDES.length - 1;
+  // The intro is at night in both themes, and so is the strip above it.
+  useStatusBand(NIGHT);
 
   const onScroll = useAnimatedScrollHandler((e) => {
     scrollX.value = e.contentOffset.x;
@@ -152,7 +155,10 @@ function Slide({
   const { Art } = slide;
   const { height } = useWindowDimensions();
   // Wide enough to fill the page, short enough to leave room for the words.
-  const size = Math.min(width - space.xl * 2, 360, (height * 0.44) / 1.13);
+  // A short phone gives the drawing less and sets the title smaller, so the
+  // words are never clipped at the bottom.
+  const short = height < 720;
+  const size = Math.min(width - space.xl * 2, 360, (height * (short ? 0.34 : 0.44)) / 1.13);
 
   return (
     <View style={[s.slide, { width }]}>
@@ -162,10 +168,10 @@ function Slide({
         </View>
       </Animated.View>
       <Animated.View style={words}>
-        <Text variant="display" style={s.title}>
+        <Text variant="display" style={[s.title, short && s.titleShort]}>
           {slide.lead}
           {'\n'}
-          <Text variant="display" style={s.hi}>
+          <Text variant="display" style={[s.hi, short && s.titleShort]}>
             {slide.hi}
           </Text>
         </Text>
@@ -227,7 +233,7 @@ function RouteArt({ size }: { size: number }) {
       <Path d={road} stroke={BAND} strokeWidth="16" strokeLinecap="round" fill="none" />
       <Path d={road} stroke={LIME} strokeWidth="6" strokeLinecap="round" fill="none" />
 
-      {/* Pickup at the office gate. */}
+      {/* The pickup, wherever the driver starts. */}
       <Circle cx="86" cy="248" r="9" fill={NIGHT} stroke={LIME} strokeWidth="4" />
 
       {[
@@ -246,11 +252,11 @@ function RouteArt({ size }: { size: number }) {
       <Path d="M268 64 C 256 50, 252 42, 252 34 A 16 16 0 0 1 284 34 C 284 42, 280 50, 268 64 Z" fill={INK} />
       <Circle cx="268" cy="34" r="6" fill={PINE} />
 
-      {/* "3 colleagues heading your way" */}
+      {/* "3 people heading your way" */}
       <Rect x="20" y="282" width="218" height="36" rx="12" fill={INK} />
       <Circle cx="40" cy="300" r="5" fill="#2E9C6E" />
       <SvgText x="54" y="305" fontSize="13" fontFamily="Manrope_700Bold" fill={PINE}>
-        3 colleagues heading your way
+        3 people heading your way
       </SvgText>
     </Svg>
   );
@@ -297,7 +303,7 @@ function StopArt({ size }: { size: number }) {
   );
 }
 
-/** A shield with a tick, colleagues around it, and the work email that proves it. */
+/** A shield with a tick, people around it, and the company email that proves it. */
 function TrustArt({ size }: { size: number }) {
   const people = [
     { x: 62, y: 100, bg: LIME, fg: PINE, t: 'AO' },
@@ -324,7 +330,7 @@ function TrustArt({ size }: { size: number }) {
         </G>
       ))}
 
-      {/* Work email with a tick. */}
+      {/* Company email with a tick. */}
       <G transform="translate(196 222)">
         <Rect x="0" y="0" width="60" height="42" rx="9" fill={INK} />
         <Path d="M6 8 L30 26 L54 8" stroke={PINE} strokeWidth="3" fill="none" strokeLinejoin="round" />
@@ -358,6 +364,7 @@ const s = themed(() =>
     art: { alignItems: 'center', marginBottom: space.xl },
     card: { backgroundColor: CARD, borderRadius: 28, overflow: 'hidden' },
     title: { color: INK, marginBottom: space.md },
+    titleShort: { fontSize: 30, lineHeight: 34 },
     hi: { color: LIME },
     body: { color: MUTED, fontSize: 16, lineHeight: 24 },
     bottom: {

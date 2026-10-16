@@ -55,6 +55,7 @@ function toTrip(row: TripRow): Trip {
     cancelledAtMin: row.cancelled_at ? toMinutes(row.cancelled_at) : undefined,
     origin: place(row.origin_name, row.origin_lat, row.origin_lng),
     destination: place(row.destination_name, row.destination_lat, row.destination_lng),
+    contributionNaira: row.contribution_naira ?? undefined,
   };
 }
 
@@ -76,6 +77,7 @@ function toFields(t: TripDraft): TripFields {
     origin_name: t.origin?.name ?? null,
     origin_lat: t.origin?.lat ?? null,
     origin_lng: t.origin?.lng ?? null,
+    contribution_naira: t.contributionNaira ?? null,
   };
 }
 
@@ -120,7 +122,10 @@ type Store = {
   mySeat: Trip | undefined;
   /** A ride that has set off and is not yet over for you, as driver or rider. */
   underway: (trip: Trip) => boolean;
-  /** "I have been dropped off", or the driver's "Done": the ride is over for you. */
+  /**
+   * "I have been dropped off", the driver's "Done", or moving on from a
+   * cancelled ride: the ride is over for you.
+   */
   finishRide: (tripId: string) => void;
 
   setDropOff: (place: DropOff | null) => Promise<void>;
@@ -339,19 +344,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     () => trips.find((t) => t.driverId === me?.id && (t.status === 'posted' || t.status === 'boarding')),
     [trips, me]
   );
-  const mySeat = useMemo(
-    () =>
-      trips.find(
-        (t) =>
-          me &&
-          // Testers may hold a seat in their own ride; nobody else can.
-          (tester || t.driverId !== me.id) &&
-          t.riders.includes(me.id) &&
-          // Once the car has left, the rider still has a ride until it is over.
-          (t.status !== 'left' || underway(t))
-      ),
-    [trips, me, underway, tester]
-  );
+  const mySeat = useMemo(() => {
+    const held = trips.filter(
+      (t) =>
+        me &&
+        // Testers may hold a seat in their own ride; nobody else can.
+        (tester || t.driverId !== me.id) &&
+        t.riders.includes(me.id) &&
+        // Once the car has left, the rider still has a ride until it is over.
+        (t.status !== 'left' || underway(t)) &&
+        // A cancelled ride is shown until the rider moves on from it.
+        (t.status !== 'cancelled' || !finished.has(t.id))
+    );
+    // A live seat always wins over a cancelled one, so booking another ride
+    // after a cancellation shows the new ride.
+    return held.find((t) => t.status !== 'cancelled') ?? held[0];
+  }, [trips, me, underway, tester, finished]);
 
   /** Run a write, surface its failure, and refetch either way. */
   const run = useCallback(

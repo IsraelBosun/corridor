@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { AuthSession, Backend, Membership, MessageRow, ProfileRow, TripRow } from './types';
+import type { AuthSession, Backend, Membership, MessageRow, PayoutRow, ProfileRow, TripRow } from './types';
 
 /**
  * The hosted backend. The rules live in the database (RLS, triggers and the
@@ -11,7 +11,7 @@ const PROFILE_COLUMNS =
 
 /** Columns, and the reservations, in one round trip. */
 const TRIP_SELECT =
-  'id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, reservations(rider_id, present_at)';
+  'id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira, reservations(rider_id, present_at)';
 
 function fail(error: { message: string } | null): void {
   if (error) throw new Error(error.message);
@@ -126,6 +126,27 @@ export const supabaseBackend: Backend = {
     const { data, error } = await supabase.from('profiles').select(PROFILE_COLUMNS);
     fail(error);
     return (data ?? []) as ProfileRow[];
+  },
+
+  async getPayout(userId) {
+    const { data, error } = await supabase
+      .from('payout_details')
+      .select('bank_name, account_number, account_name')
+      .eq('user_id', userId)
+      .maybeSingle();
+    fail(error);
+    return (data as PayoutRow | null) ?? null;
+  },
+
+  async savePayout(userId, row) {
+    if (row === null) {
+      fail((await supabase.from('payout_details').delete().eq('user_id', userId)).error);
+      return;
+    }
+    const { error } = await supabase
+      .from('payout_details')
+      .upsert({ user_id: userId, ...row, updated_at: new Date().toISOString() });
+    fail(error);
   },
 
   async listTrips() {

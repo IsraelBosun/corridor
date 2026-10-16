@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
 
@@ -40,41 +40,48 @@ export function AuthScreen({
   footer?: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
   useStatusBand(PINE);
 
   return (
     <SafeAreaView style={s.screen} edges={['left', 'right', 'bottom']}>
-      <ScrollView
-        style={s.flex}
-        contentContainerStyle={s.grow}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        bounces={false}>
-        <View style={[s.hero, { paddingTop: insets.top + space.xl }]}>
-          <Svg style={StyleSheet.absoluteFill} viewBox="0 0 390 260" preserveAspectRatio="xMidYMid slice">
-            <Path d={ROAD} stroke="#24493A" strokeWidth="46" strokeLinecap="round" fill="none" />
-            <Path d={ROAD} stroke={LIME} strokeWidth="3" strokeDasharray="2 9" strokeLinecap="round" fill="none" />
-            <Circle cx="96" cy="196" r="6" fill="#FFFFFF" />
-            <Circle cx="210" cy="128" r="17" fill={LIME} opacity="0.18" />
-            <Circle cx="210" cy="128" r="9" fill={LIME} />
-            <Circle cx="330" cy="72" r="6" fill="#FFFFFF" />
-          </Svg>
-          <Wordmark />
-        </View>
+      {/*
+        The keyboard pushes the form and the pinned button up rather than
+        covering them. On a short phone the hero scrolls away above.
+      */}
+      <KeyboardAvoidingView style={s.flex} behavior="padding">
+        <ScrollView
+          style={s.flex}
+          contentContainerStyle={s.grow}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}>
+          <View style={[s.hero, { height: Math.min(300, Math.round(height * 0.32)), paddingTop: insets.top + space.xl }]}>
+            <Svg style={StyleSheet.absoluteFill} viewBox="0 0 390 260" preserveAspectRatio="xMidYMid slice">
+              <Path d={ROAD} stroke="#24493A" strokeWidth="46" strokeLinecap="round" fill="none" />
+              <Path d={ROAD} stroke={LIME} strokeWidth="3" strokeDasharray="2 9" strokeLinecap="round" fill="none" />
+              <Circle cx="96" cy="196" r="6" fill="#FFFFFF" />
+              <Circle cx="210" cy="128" r="17" fill={LIME} opacity="0.18" />
+              <Circle cx="210" cy="128" r="9" fill={LIME} />
+              <Circle cx="330" cy="72" r="6" fill="#FFFFFF" />
+            </Svg>
+            <Wordmark />
+          </View>
 
-        <View style={s.sheet}>
-          <Text variant="display" style={s.headline}>
-            {title}
-          </Text>
-          {body ? (
-            <Text variant="body" tone="muted" style={s.body}>
-              {body}
+          <View style={s.sheet}>
+            <Text variant="display" style={s.headline}>
+              {title}
             </Text>
-          ) : null}
-          {children}
-        </View>
-      </ScrollView>
-      {footer ? <View style={s.footer}>{footer}</View> : null}
+            {body ? (
+              <Text variant="body" tone="muted" style={s.body}>
+                {body}
+              </Text>
+            ) : null}
+            {children}
+          </View>
+        </ScrollView>
+        {footer ? <View style={s.footer}>{footer}</View> : null}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -84,8 +91,8 @@ const s = themed(() =>
     flex: { flex: 1 },
     grow: { flexGrow: 1 },
     screen: { flex: 1, backgroundColor: color.bg },
+    // Never more than a third of the screen, so a short phone keeps room for the form.
     hero: {
-      height: 300,
       backgroundColor: PINE,
       paddingHorizontal: GUTTER + space.sm,
       overflow: 'hidden',

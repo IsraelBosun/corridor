@@ -29,8 +29,9 @@ const HOUR = 15;
 /** Monday to Friday, in the trigger's numbering where 1 is Sunday. */
 const WEEKDAYS = [2, 3, 4, 5, 6];
 
-/** True in Expo Go, where notifications cannot be used. */
-export const REMINDERS_UNAVAILABLE = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+/** True in Expo Go and on web, where these notifications cannot be used. */
+export const REMINDERS_UNAVAILABLE =
+  Platform.OS === 'web' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 let loaded: typeof NotificationsModule | null | undefined;
 
@@ -60,7 +61,7 @@ function notifications(): typeof NotificationsModule | null {
 const COPY: Record<Role, { title: string; body: string; url: string }> = {
   driver: {
     title: 'Driving home tonight?',
-    body: 'Post your ride so colleagues heading your way can grab a seat.',
+    body: 'Post your ride so people heading your way can grab a seat.',
     url: '/post',
   },
   passenger: {

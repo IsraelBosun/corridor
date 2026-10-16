@@ -7,10 +7,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSession } from '@/data/session';
 import { seatsOpen, startName, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
-import { demoNow, hhmm, untilText } from '@/lib/time';
+import type { LngLat } from '@/lib/mapbox';
+import { naira } from '@/lib/config';
+import { useMyLocation } from '@/lib/location';
+import { NEAR_PICKUP_M, pickupMetres } from '@/lib/nearby';
+import { demoNow, hhmm, untilHeading, untilShort } from '@/lib/time';
 import { useReminders } from '@/lib/reminders';
 import { peekReturnTo, takeReturnTo } from '@/theme/theme';
-import { color, GUTTER, LIME, radius, space, themed } from '@/theme/tokens';
+import { color, currentScheme, elevation, GUTTER, LIME, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ChatIcon, ChevronIcon, PinIcon, PlusIcon } from '@/ui/icons';
 import { Avatar, Button, SectionTitle } from '@/ui/primitives';
 import { BottomSheet } from '@/ui/sheet';
@@ -69,8 +73,18 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
     // Your own ride is hidden, except for testers, who book it to try both sides.
     .filter((t) => (t.status === 'posted' || t.status === 'boarding') && (tester || t.driverId !== me?.id))
     .sort((a, b) => a.departMin - b.departMin);
-  const passing = dropOff ? open.filter(serves) : open;
-  const others = dropOff ? open.filter((t) => !serves(t)) : [];
+  // A ride is for you when you can walk to where it starts (within 1 km of
+  // where this phone is now) and its road passes where you get off. Either
+  // check is skipped while it cannot be made: no location yet, or no drop off
+  // set. Rides that miss are still listed, lower down.
+  const here = useMyLocation();
+  const fits = (t: Trip) => {
+    const m = pickupMetres(t, here);
+    return (m === undefined || m <= NEAR_PICKUP_M) && (!dropOff || serves(t));
+  };
+  const checking = here !== null || dropOff !== null;
+  const passing = open.filter(fits);
+  const others = open.filter((t) => !fits(t));
   // A cancelled ride is not going anywhere, so nothing of it is drawn.
   const drawn = mySeat && mySeat.status !== 'cancelled' ? mySeat : undefined;
 
@@ -90,7 +104,7 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
           accessibilityRole="button"
           accessibilityLabel="Where you get off"
           style={({ pressed }) => [s.search, pressed && s.pressed]}>
-          <PinIcon size={18} tint={LIME} />
+          <PinIcon size={18} tint={color.brandInk} />
           <View style={s.flex}>
             {dropOff ? (
               <>
@@ -107,7 +121,7 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
               </Text>
             )}
           </View>
-          <ChevronIcon size={18} tint={NIGHT_FAINT} />
+          <ChevronIcon size={18} tint={barColours().faint} />
         </Pressable>
       </TopBar>
 
@@ -131,8 +145,8 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
               aside={
                 loading
                   ? 'Loading'
-                  : dropOff
-                    ? `${passing.length} ${passing.length === 1 ? 'passes' : 'pass'} ${dropOffName}`
+                  : checking
+                    ? `${passing.length} ${passing.length === 1 ? 'suits' : 'suit'} you`
                     : `${open.length} posted so far`
               }
             />
@@ -144,7 +158,7 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
         ) : mySeat ? (
           <MyRide trip={mySeat} now={now} />
         ) : (
-          <Browse passing={passing} others={others} now={now} />
+          <Browse passing={passing} others={others} now={now} here={here} />
         )}
       </BottomSheet>
     </View>
@@ -177,7 +191,7 @@ function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
         <View style={s.status}>
           <View style={[s.statusDot, myTrip || onTheWay ? s.statusLive : null]} />
           <Text variant="small" style={s.statusText}>
-            {myTrip ? 'Your ride is live' : onTheWay ? 'On the way' : 'Not posted tonight'}
+            {myTrip ? 'Your ride is live' : onTheWay ? 'On the way' : 'Not posted yet'}
           </Text>
         </View>
       </TopBar>
@@ -211,7 +225,7 @@ function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
         ) : (
           <View style={s.block}>
             <Text variant="body" tone="muted">
-              Post the time you expect to leave and the seats you have. Colleagues
+              Post the time you expect to leave and the seats you have. People
               going your way can then take one.
             </Text>
             <Button label="Post tonight's ride" onPress={() => router.push('/post')} arrow />
@@ -253,12 +267,15 @@ function LoadError() {
   );
 }
 
-/** "Tonight", then the title, with an optional count on the right. */
+/**
+ * "This evening" before noon and "Tonight" after it, then the title, with an
+ * optional count on the right.
+ */
 function SheetTitle({ title, aside }: { title: string; aside?: string }) {
   return (
     <View>
       <Text variant="kicker" tone="brand">
-        Tonight
+        {demoNow() < 12 * 60 ? 'This evening' : 'Tonight'}
       </Text>
       <View style={s.titleRow}>
         <Text variant="title" style={s.flex} numberOfLines={1}>
@@ -274,7 +291,17 @@ function SheetTitle({ title, aside }: { title: string; aside?: string }) {
   );
 }
 
-function Browse({ passing, others, now }: { passing: Trip[]; others: Trip[]; now: number }) {
+function Browse({
+  passing,
+  others,
+  now,
+  here,
+}: {
+  passing: Trip[];
+  others: Trip[];
+  now: number;
+  here: LngLat | null;
+}) {
   const router = useRouter();
   const { dropOff, dropOffName } = useStore();
   const open = (id: string) => router.push({ pathname: '/trip/[id]', params: { id } });
@@ -302,29 +329,41 @@ function Browse({ passing, others, now }: { passing: Trip[]; others: Trip[]; now
         </Pressable>
       ) : null}
 
+      {!here ? (
+        <Text variant="small" tone="muted" style={s.none}>
+          Allow location to see which pickups are within walking distance. It stays on
+          this phone.
+        </Text>
+      ) : null}
+
       {passing.map((t, i) => (
         // The soonest ride gets the button; the rest stay compact.
         <TripRow
           key={t.id}
           trip={t}
           now={now}
-          cta={i === 0 ? 'Reserve my seat' : undefined}
+          pickupM={pickupMetres(t, here)}
+          cta={i === 0 ? 'See this ride' : undefined}
           onPress={() => open(t.id)}
         />
       ))}
 
-      {dropOff && passing.length === 0 ? (
+      {passing.length === 0 && others.length > 0 ? (
         <Text variant="small" tone="muted" style={s.none}>
-          Nothing passes {dropOffName} yet. The rides below go elsewhere on the
-          corridor.
+          {here && dropOff
+            ? `No ride starts within 1 km of you and passes ${dropOffName} yet.`
+            : here
+              ? 'No ride starts within 1 km of you yet.'
+              : `Nothing passes ${dropOffName} yet.`}{' '}
+          The rides below might still work for you.
         </Text>
       ) : null}
 
       {others.length > 0 ? (
         <>
-          <SectionTitle>{`Not passing ${dropOffName}`}</SectionTitle>
+          <SectionTitle>Other rides tonight</SectionTitle>
           {others.map((t) => (
-            <TripRow key={t.id} trip={t} now={now} dim onPress={() => open(t.id)} />
+            <TripRow key={t.id} trip={t} now={now} pickupM={pickupMetres(t, here)} dim onPress={() => open(t.id)} />
           ))}
         </>
       ) : null}
@@ -345,13 +384,15 @@ function MyRide({ trip, now }: { trip: Trip; now: number }) {
   const here = !!(me && trip.presentAt[me.id]);
   const openTrip = () => router.push({ pathname: '/trip/[id]', params: { id: trip.id } });
 
+  // Moving on puts the list of rides back on this screen. The cancelled ride
+  // stays out of the way for the rest of the evening.
   if (trip.status === 'cancelled') {
     return (
       <View style={s.block}>
         <Text variant="body" tone="muted">
           {driver.name.split(' ')[0]} cancelled. Other rides may still have seats.
         </Text>
-        <Button label="Find another ride" onPress={openTrip} />
+        <Button label="Find another ride" onPress={() => finishRide(trip.id)} arrow />
       </View>
     );
   }
@@ -372,7 +413,11 @@ function MyRide({ trip, now }: { trip: Trip; now: number }) {
           </View>
         </View>
 
-        <Pressable onPress={openTrip} style={s.driver} accessibilityRole="button">
+        <Pressable
+          onPress={openTrip}
+          style={s.driver}
+          accessibilityRole="button"
+          accessibilityLabel={`${driver.name}, ${trip.vehicle || 'car not described'}. Ride details`}>
           <Avatar initials={driver.initials} size={48} />
           <View style={s.flex}>
             <Text variant="heading">{driver.name}</Text>
@@ -398,13 +443,22 @@ function MyRide({ trip, now }: { trip: Trip; now: number }) {
   return (
     <View style={s.block}>
       <View>
-        <Text variant="dataLarge">{here ? 'You are checked in' : untilText(trip.departMin, now)}</Text>
+        <Text variant="dataLarge">{here ? 'You are checked in' : untilHeading(trip.departMin, now)}</Text>
         <Text variant="small" tone="muted">
           Leaves {hhmm(trip.departMin)}, give or take {trip.toleranceMin} min, from {start}
         </Text>
+        {trip.contributionNaira ? (
+          <Text variant="small" tone="ink" style={s.link}>
+            {naira(trip.contributionNaira)} to {driver.name.split(' ')[0]} when you get in, cash or transfer
+          </Text>
+        ) : null}
       </View>
 
-      <Pressable onPress={openTrip} style={s.driver} accessibilityRole="button">
+      <Pressable
+        onPress={openTrip}
+        style={s.driver}
+        accessibilityRole="button"
+        accessibilityLabel={`${driver.name}, ${trip.vehicle || 'car not described yet'}. Ride details`}>
         <Avatar initials={driver.initials} size={48} />
         <View style={s.flex}>
           <Text variant="heading">{driver.name}</Text>
@@ -438,17 +492,14 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
   const router = useRouter();
   const { person } = useStore();
   const left = seatsOpen(trip);
-  const until = untilText(trip.departMin, now);
   const names = trip.riders.map((r) => person(r).name.split(' ')[0]).join(', ');
+  // Three or four faces next to the count leave it no room on a narrow phone.
+  const face = trip.riders.length > 2 ? 34 : 44;
 
   const stats = [
     { label: 'Leaving', value: hhmm(trip.departMin) },
-    { label: 'Window', value: `±${trip.toleranceMin}m` },
-    // "in about 2 hr 15 min" reads as "2 hr 15" in a tile this size.
-    {
-      label: 'In',
-      value: until.startsWith('in ') ? until.replace(/^in (about )?/, '').replace(/ min$/, '') : 'Now',
-    },
+    { label: 'Window', value: `±${trip.toleranceMin} min` },
+    { label: 'In', value: untilShort(trip.departMin, now) },
   ];
 
   return (
@@ -474,7 +525,7 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
         ) : (
           <View style={s.riders}>
             {trip.riders.map((r) => (
-              <Avatar key={r} initials={person(r).initials} size={44} tone={trip.presentAt[r] ? 'go' : 'person'} />
+              <Avatar key={r} initials={person(r).initials} size={face} tone={trip.presentAt[r] ? 'go' : 'person'} />
             ))}
           </View>
         )}
@@ -491,6 +542,12 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
           </Text>
         </View>
       </View>
+
+      <Text variant="small" tone="muted">
+        {trip.contributionNaira
+          ? `Each rider pays you ${naira(trip.contributionNaira)} directly, in cash or by transfer.`
+          : 'A free ride. Riders pay nothing.'}
+      </Text>
 
       <Button
         label="Go to pickup"
@@ -513,14 +570,19 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
   );
 }
 
-/* The top bar sits on the night map in both themes, so it has its own colours. */
-const NIGHT_INK = '#F5F5F2';
-const NIGHT_FAINT = '#93A39A';
-const NIGHT_GLASS = 'rgba(20,38,31,0.92)';
-const NIGHT_EDGE = 'rgba(255,255,255,0.12)';
+/*
+  The top bar floats on the map, which is Mapbox's light style by day and its
+  dark style at night. By day it is a white card; at night, dark glass.
+*/
+function barColours() {
+  return currentScheme() === 'dark'
+    ? { ink: '#F5F5F2', faint: '#93A39A', glass: 'rgba(20,38,31,0.92)', edge: 'rgba(255,255,255,0.12)' }
+    : { ink: color.ink, faint: color.inkMuted, glass: color.surface, edge: color.line };
+}
 
-const s = themed(() =>
-  StyleSheet.create({
+const s = themed(() => {
+  const BAR = barColours();
+  return StyleSheet.create({
   screen: { flex: 1, backgroundColor: color.bg },
   flex: { flex: 1 },
   pressed: { opacity: 0.7 },
@@ -541,30 +603,33 @@ const s = themed(() =>
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    backgroundColor: NIGHT_GLASS,
+    backgroundColor: BAR.glass,
     borderWidth: 1,
-    borderColor: NIGHT_EDGE,
+    borderColor: BAR.edge,
     borderRadius: radius.lg,
     paddingHorizontal: space.lg,
     paddingVertical: 6,
+    ...elevation,
   },
-  searchLabel: { color: NIGHT_FAINT, fontSize: 10, lineHeight: 13 },
-  searchValue: { color: NIGHT_INK },
-  searchEmpty: { color: NIGHT_FAINT, fontWeight: '600' },
+  searchLabel: { color: BAR.faint, fontSize: 10, lineHeight: 13 },
+  searchValue: { color: BAR.ink },
+  searchEmpty: { color: BAR.faint, fontWeight: '600' },
   status: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
     minHeight: 44,
-    backgroundColor: NIGHT_GLASS,
+    backgroundColor: BAR.glass,
     borderWidth: 1,
-    borderColor: NIGHT_EDGE,
+    borderColor: BAR.edge,
     borderRadius: radius.pill,
     paddingHorizontal: space.lg,
+    ...elevation,
   },
-  statusText: { color: NIGHT_INK, fontWeight: '700' },
-  statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: NIGHT_FAINT },
-  statusLive: { backgroundColor: LIME },
+  statusText: { color: BAR.ink, fontWeight: '700' },
+  statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: BAR.faint },
+  // Lime disappears on white, so by day the live dot is pine.
+  statusLive: { backgroundColor: currentScheme() === 'dark' ? LIME : color.brand },
   titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
   aside: { fontWeight: '600', maxWidth: '45%' },
   foot: { marginTop: space.sm, marginBottom: space.md },
@@ -657,5 +722,5 @@ const s = themed(() =>
     alignItems: 'center',
     justifyContent: 'center',
   },
-  })
-);
+  });
+});

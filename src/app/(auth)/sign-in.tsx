@@ -45,7 +45,13 @@ export default function SignInScreen() {
  * other apps use, and it survives a change of job. Whether someone belongs to
  * the corridor is asked next, on its own screen, by a code sent to their work
  * email.
+ *
+ * Accounts are made by hand for now: there is no mail server to send a
+ * confirmation link, so a sign up from here would wait for an email that never
+ * comes. Set SELF_SIGN_UP once mail is set up.
  */
+const SELF_SIGN_UP = false;
+
 function EmailSignIn() {
   const { signIn, signUp } = useSession();
   const [creating, setCreating] = useState(false);
@@ -96,14 +102,20 @@ function EmailSignIn() {
             disabled={!ready || busy}
             arrow={!busy}
           />
-          <Pressable onPress={switchMode} accessibilityRole="button" hitSlop={8} style={s.switch}>
-            <Text variant="small" tone="muted">
-              {creating ? 'Have an account? ' : 'New to Corridor? '}
-              <Text variant="small" tone="brand" style={s.bold}>
-                {creating ? 'Sign in' : 'Create an account'}
+          {SELF_SIGN_UP ? (
+            <Pressable onPress={switchMode} accessibilityRole="button" hitSlop={8} style={s.switch}>
+              <Text variant="small" tone="muted">
+                {creating ? 'Have an account? ' : 'New to Corridor? '}
+                <Text variant="small" tone="brand" style={s.bold}>
+                  {creating ? 'Sign in' : 'Create an account'}
+                </Text>
               </Text>
+            </Pressable>
+          ) : (
+            <Text variant="small" tone="muted" center style={s.switch}>
+              New to Corridor? Ask the person who shared it with you for an account.
             </Text>
-          </Pressable>
+          )}
         </>
       }>
       <Text variant="eyebrow" style={s.label}>

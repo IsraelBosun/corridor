@@ -1,0 +1,63 @@
+/**
+ * Nigerian banks and fintechs that take transfers to a ten digit account
+ * number, for the bank picker in Account. Names are what people recognise,
+ * not the registered name. Anything missing can still be typed in.
+ *
+ * Keep each name within 40 characters: payout_details.bank_name checks it.
+ */
+export const BANKS: readonly string[] = [
+  'Access Bank',
+  'Citibank Nigeria',
+  'Ecobank Nigeria',
+  'Fidelity Bank',
+  'First Bank of Nigeria',
+  'FCMB (First City Monument Bank)',
+  'Globus Bank',
+  'GTBank (Guaranty Trust Bank)',
+  'Jaiz Bank',
+  'Keystone Bank',
+  'Lotus Bank',
+  'Nova Bank',
+  'Optimus Bank',
+  'Parallex Bank',
+  'Polaris Bank',
+  'PremiumTrust Bank',
+  'Providus Bank',
+  'Signature Bank',
+  'Stanbic IBTC Bank',
+  'Standard Chartered Bank',
+  'Sterling Bank',
+  'SunTrust Bank',
+  'TAJBank',
+  'UBA (United Bank for Africa)',
+  'Union Bank',
+  'Unity Bank',
+  'Wema Bank',
+  'Zenith Bank',
+];
+
+export const FINTECHS: readonly string[] = [
+  '9PSB (9 Payment Service Bank)',
+  'AB Microfinance Bank',
+  'Accion Microfinance Bank',
+  'ALAT by Wema',
+  'Carbon',
+  'Eyowo',
+  'FairMoney Microfinance Bank',
+  'GoMoney',
+  'HopePSB',
+  'Kuda Bank',
+  'LAPO Microfinance Bank',
+  'Mint (Mintyn)',
+  'MoMo PSB (MTN)',
+  'Moniepoint',
+  'OPay',
+  'Paga',
+  'PalmPay',
+  'Raven Bank',
+  'Renmoney Microfinance Bank',
+  'Rubies Bank',
+  'SmartCash PSB (Airtel)',
+  'Sparkle',
+  'VFD Microfinance Bank',
+];

@@ -30,10 +30,40 @@ export function untilText(target: Minutes, now: Minutes): string {
   if (d <= 0) return `was due at ${hhmm(target)}`;
   if (d < 5) return `in ${d} min`;
   if (d < 60) return `in about ${Math.round(d / 5) * 5} min`;
-  const h = Math.floor(d / 60);
-  const rem = d % 60;
-  if (rem < 15) return `in about ${h} hr`;
-  return `in about ${h} hr ${Math.round(rem / 15) * 15} min`;
+  const { h, q } = hoursAndQuarters(d);
+  if (q === 0) return `in about ${h} hr`;
+  return `in about ${h} hr ${q} min`;
+}
+
+/** Whole hours and the remainder to the nearest quarter, carrying 60 into the hour. */
+function hoursAndQuarters(d: Minutes): { h: number; q: number } {
+  let h = Math.floor(d / 60);
+  let q = d % 60 < 15 ? 0 : Math.round((d % 60) / 15) * 15;
+  if (q === 60) {
+    h += 1;
+    q = 0;
+  }
+  return { h, q };
+}
+
+/** untilText for the start of a line or a heading: "In about 2 hr", "Leaving now". */
+export function untilHeading(target: Minutes, now: Minutes): string {
+  const t = untilText(target, now);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/**
+ * The same, short enough for a small tile under the label "In": "25 min",
+ * "2h 15m", "Now", "Overdue". Always with a unit.
+ */
+export function untilShort(target: Minutes, now: Minutes): string {
+  const d = target - now;
+  if (d <= 0 && d > -20) return 'Now';
+  if (d <= 0) return 'Overdue';
+  if (d < 5) return `${d} min`;
+  if (d < 60) return `${Math.round(d / 5) * 5} min`;
+  const { h, q } = hoursAndQuarters(d);
+  return q === 0 ? `${h} hr` : `${h}h ${q}m`;
 }
 
 /**

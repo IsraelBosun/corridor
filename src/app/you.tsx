@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { USING_LOCAL } from '@/data/backend';
+import { usePayout } from '@/data/payout';
 import { useSession } from '@/data/session';
 import { useStore } from '@/data/store';
 import { useLastOrigin } from '@/lib/origin';
@@ -21,6 +22,7 @@ import {
   SignOutIcon,
 } from '@/ui/icons';
 import { Avatar, Callout, Screen, SectionTitle, TileRow } from '@/ui/primitives';
+import { BankPicker } from '@/ui/bank-picker';
 import { showDialog } from '@/ui/dialog';
 import { useStatusBand } from '@/ui/status-band';
 import { Text } from '@/ui/text';
@@ -141,10 +143,12 @@ export default function YouScreen() {
         <>
           <SectionTitle>Your car</SectionTitle>
           <CarField />
+          <SectionTitle>Bank details</SectionTitle>
+          <PayoutField />
         </>
       ) : null}
 
-      <SectionTitle>Colleague check</SectionTitle>
+      <SectionTitle>Company email</SectionTitle>
       <Membership onError={setError} />
 
       <SectionTitle>Reminders</SectionTitle>
@@ -177,9 +181,10 @@ export default function YouScreen() {
       </View>
 
       <Text variant="small" tone="faint" style={s.foot}>
-        A notice board between colleagues, not a transport service. Drivers and vehicles are not
-        vetted, and no money changes hands. We keep your name, your work address and one usual
-        place, and nothing about where you have been.
+        A notice board between verified commuters, not a transport service. Drivers and vehicles are not
+        vetted. Corridor never handles money: a fuel contribution, when a driver asks for one, goes
+        straight from rider to driver. We keep your name, your work address and one usual place,
+        and nothing about where you have been.
       </Text>
     </Screen>
   );
@@ -312,7 +317,7 @@ function Commute({ driver }: { driver: boolean }) {
 
         <View style={s.flex}>
           <Text variant="small" tone="muted">
-            From
+            {driver ? 'From, set when you offer a ride' : 'From'}
           </Text>
           <Text variant="heading" tone={driver && lastOrigin ? 'ink' : 'muted'} numberOfLines={1}>
             {from}
@@ -334,7 +339,7 @@ function Commute({ driver }: { driver: boolean }) {
       </Pressable>
       <Text variant="small" tone="faint" style={s.under}>
         {driver
-          ? 'Filled in each time you offer a ride. Change it on any one ride without touching this.'
+          ? 'Tap to change where you usually head. It is filled in each time you offer a ride, and you can change either end on any one ride.'
           : 'Rides whose road passes close to it come first. Change it any evening from the home screen.'}
       </Text>
     </>
@@ -353,8 +358,8 @@ function Membership({ onError }: { onError: (e: string) => void }) {
 
   function confirmLeave() {
     showDialog(
-      'Remove your work email?',
-      'You will need to confirm a work email again to use Corridor. Your account and your other apps are not affected.',
+      'Remove your company email?',
+      'You will need to confirm a company email again to use Corridor. Your account and your other apps are not affected.',
       [
         { text: 'Keep it', style: 'cancel' },
         {
@@ -378,7 +383,7 @@ function Membership({ onError }: { onError: (e: string) => void }) {
         </View>
         <View style={s.flex}>
           <Text variant="body" style={s.strong} numberOfLines={1}>
-            {membership?.workEmail ?? 'No work email yet'}
+            {membership?.workEmail ?? 'No company email yet'}
           </Text>
           <Text variant="small" tone="muted">
             {expires
@@ -413,7 +418,7 @@ function Membership({ onError }: { onError: (e: string) => void }) {
             I have left this job
           </Text>
           <Text variant="small" tone="muted">
-            Your account stays. A new work email lets you back in.
+            Your account stays. A new company email lets you back in.
           </Text>
         </View>
         <ChevronIcon />
@@ -432,7 +437,9 @@ const MODE_LABEL: Record<ThemeMode, string> = { light: 'Light', dark: 'Dark', sy
  * app cannot ask a second time.
  */
 function Reminders({ driver }: { driver: boolean }) {
-  const [on, setOn] = useState(true);
+  // Unknown until the phone has said, so the switch never shows one state and
+  // then jumps to the other.
+  const [on, setOn] = useState<boolean | null>(null);
   const [blocked, setBlocked] = useState(false);
   const role = driver ? 'driver' : 'passenger';
 
@@ -458,17 +465,21 @@ function Reminders({ driver }: { driver: boolean }) {
             {driver ? 'A reminder to post your ride home.' : 'A reminder to look for a ride home.'}
           </Text>
         </View>
-        <Switch
-          value={on}
-          onValueChange={toggle}
-          trackColor={{ false: color.lineStrong, true: color.brand }}
-          thumbColor={color.surface}
-          accessibilityLabel="Weekday reminder at 15:00"
-        />
+        {on === null ? (
+          <View style={s.switchSpace} />
+        ) : (
+          <Switch
+            value={on}
+            onValueChange={toggle}
+            trackColor={{ false: color.lineStrong, true: color.brand }}
+            thumbColor={color.surface}
+            accessibilityLabel="Weekday reminder at 15:00"
+          />
+        )}
       </View>
       {REMINDERS_UNAVAILABLE ? (
         <Text variant="small" tone="muted" style={s.cardNote}>
-          Reminders only work in the installed app, not in Expo Go.
+          Reminders only work in the installed app, not in Expo Go or a browser.
         </Text>
       ) : blocked ? (
         <Pressable onPress={() => Linking.openSettings()} accessibilityRole="button" style={s.cardNote}>
@@ -487,6 +498,192 @@ function Reminders({ driver }: { driver: boolean }) {
 function ModePicker() {
   const { mode, setMode } = useTheme();
   return <TileRow options={MODES} value={mode} onChange={setMode} render={(m) => MODE_LABEL[m]} />;
+}
+
+/**
+ * Where riders send a fuel contribution by transfer. Set once, used on every
+ * paid ride, and required for one: the database refuses a paid ride without
+ * it. It shows them only to riders holding a seat on this driver's paid ride
+ * tonight.
+ */
+function PayoutField() {
+  const { me } = useStore();
+  const { payout, loading, save } = usePayout(me?.id);
+  const [editing, setEditing] = useState(false);
+  const [bankName, setBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function startEdit() {
+    setBankName(payout?.bankName ?? '');
+    setAccountNumber(payout?.accountNumber ?? '');
+    setAccountName(payout?.accountName ?? me?.name ?? '');
+    setError(null);
+    setEditing(true);
+  }
+
+  const problem =
+    bankName.trim().length < 2
+      ? 'Choose your bank.'
+      : !/^[0-9]{10}$/.test(accountNumber)
+        ? 'An account number is ten digits.'
+        : accountName.trim().length < 2
+          ? 'Give the name on the account.'
+          : null;
+
+  async function onSave() {
+    if (problem || busy) return;
+    setBusy(true);
+    const failed = await save({ bankName, accountNumber, accountName });
+    setBusy(false);
+    if (failed) setError(failed);
+    else setEditing(false);
+  }
+
+  function confirmRemove() {
+    showDialog(
+      'Remove your bank details?',
+      'You will need to add them again before your next paid ride.',
+      [
+        { text: 'Keep them', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const failed = await save(null);
+            if (failed) setError(failed);
+          },
+        },
+      ]
+    );
+  }
+
+  if (loading) return <View style={s.card} />;
+
+  if (!editing) {
+    return (
+      <View style={s.card}>
+        {payout ? (
+          <>
+            <Text variant="small" tone="muted">
+              {payout.bankName}
+            </Text>
+            <Text variant="dataLarge" style={s.accountNumber}>
+              {payout.accountNumber}
+            </Text>
+            <Text variant="body" style={s.strong}>
+              {payout.accountName}
+            </Text>
+            <View style={s.saveRow}>
+              <Pressable onPress={startEdit} accessibilityRole="button" style={({ pressed }) => [s.save, pressed && s.pressed]}>
+                <Text variant="small" tone="onAccent" style={s.bold}>
+                  Change
+                </Text>
+              </Pressable>
+              <Pressable onPress={confirmRemove} accessibilityRole="button" hitSlop={8}>
+                <Text variant="small" tone="stop" style={s.bold}>
+                  Remove
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <Pressable onPress={startEdit} accessibilityRole="button" style={s.linkRow}>
+            <View style={s.flex}>
+              <Text variant="body" style={s.strong}>
+                Add an account for transfers
+              </Text>
+              <Text variant="small" tone="muted">
+                Needed before you ask riders for a fuel contribution.
+              </Text>
+            </View>
+            <ChevronIcon />
+          </Pressable>
+        )}
+        {error ? (
+          <Text variant="small" tone="stop" style={s.cardNote}>
+            {error}
+          </Text>
+        ) : null}
+        <Text variant="small" tone="faint" style={s.cardNote}>
+          Only riders holding a seat on your paid ride see this, and only that evening. Corridor
+          never handles the money.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={s.card}>
+      <Text variant="eyebrow">Bank</Text>
+      <BankPicker value={bankName} onChange={setBankName} />
+
+      <Text variant="eyebrow" style={s.gapTop}>
+        Account number
+      </Text>
+      <View style={s.inputWrap}>
+        <TextInput
+          value={accountNumber}
+          onChangeText={(v) => setAccountNumber(v.replace(/[^0-9]/g, '').slice(0, 10))}
+          placeholder="Ten digits"
+          placeholderTextColor={color.inkFaint}
+          style={s.input}
+          keyboardType="number-pad"
+          maxLength={10}
+          accessibilityLabel="Account number"
+        />
+        <Text variant="small" tone="faint">
+          {accountNumber.length}/10
+        </Text>
+      </View>
+
+      <Text variant="eyebrow" style={s.gapTop}>
+        Name on the account
+      </Text>
+      <View style={s.inputWrap}>
+        <TextInput
+          value={accountName}
+          onChangeText={(v) => setAccountName(v.slice(0, 60))}
+          placeholder="As the bank shows it"
+          placeholderTextColor={color.inkFaint}
+          style={s.input}
+          autoCapitalize="words"
+          returnKeyType="done"
+          onSubmitEditing={onSave}
+          accessibilityLabel="Name on the account"
+        />
+      </View>
+
+      {error ? (
+        <Text variant="small" tone="stop" style={s.cardNote}>
+          {error}
+        </Text>
+      ) : null}
+
+      <View style={s.saveRow}>
+        <Text variant="small" tone="faint" style={s.flex}>
+          {problem ?? 'Riders check the name before they send.'}
+        </Text>
+        <Pressable onPress={() => setEditing(false)} accessibilityRole="button" hitSlop={8}>
+          <Text variant="small" tone="muted" style={s.bold}>
+            Cancel
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={onSave}
+          disabled={Boolean(problem) || busy}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: Boolean(problem) || busy }}
+          style={({ pressed }) => [s.save, (problem || busy) && s.dim, pressed && s.pressed]}>
+          <Text variant="small" tone="onAccent" style={s.bold}>
+            {busy ? 'Saving' : 'Save'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 
 const CAR_MAX = 30;
@@ -721,6 +918,8 @@ const s = themed(() =>
     },
     fill: { height: 8, borderRadius: 4, backgroundColor: color.brand },
     linkRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+    switchSpace: { width: 52, height: 32 },
+    accountNumber: { letterSpacing: 1.5, marginVertical: space.xs },
 
     // Car
     inputWrap: {

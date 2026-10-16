@@ -319,7 +319,7 @@ export function useSession(): SessionState {
 function readable(text: string): string {
   const m = text.toLowerCase();
   if (m.includes('outside the group')) {
-    return 'Verify your @' + WORK_DOMAIN + ' work email first.';
+    return 'Verify your @' + WORK_DOMAIN + ' company email first.';
   }
   // "Invalid login credentials" whether the email is unknown or the password
   // is wrong. Saying which would tell a stranger who has an account.

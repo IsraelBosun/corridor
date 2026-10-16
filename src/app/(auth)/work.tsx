@@ -65,11 +65,11 @@ export default function WorkEmailScreen() {
 
   return (
     <AuthScreen
-      title={lapsed ? 'Quick check.' : 'Confirm your work email.'}
+      title={lapsed ? 'Quick check.' : 'Confirm your company email.'}
       body={
         lapsed
-          ? 'Every 60 days we check you still work here.'
-          : 'Corridor is for colleagues only. We will send you a code.'
+          ? 'Every 60 days we check your company email still works.'
+          : 'Corridor is for verified company staff only. We will send you a code.'
       }
       footer={
         <>
@@ -117,7 +117,7 @@ export default function WorkEmailScreen() {
               maxLength={CODE_LENGTH}
               returnKeyType="go"
               onSubmitEditing={verify}
-              accessibilityLabel="The code from your work email"
+              accessibilityLabel="The code from your company email"
             />
           </View>
           <View style={s.row}>
@@ -165,7 +165,7 @@ export default function WorkEmailScreen() {
               keyboardType="email-address"
               returnKeyType="send"
               onSubmitEditing={send}
-              accessibilityLabel="The first part of your work email address"
+              accessibilityLabel="The first part of your company email address"
             />
             <Text variant="data" tone="faint" style={s.domain}>
               @{WORK_DOMAIN}
@@ -185,7 +185,7 @@ export default function WorkEmailScreen() {
       <View style={s.spacer} />
 
       <Text variant="small" tone="faint" style={s.privacy}>
-        Only used to confirm you are a colleague. Nobody else sees it.
+        Only used to confirm where you work. Nobody else sees it.
       </Text>
     </AuthScreen>
   );

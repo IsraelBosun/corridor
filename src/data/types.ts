@@ -69,6 +69,11 @@ export type Trip = {
   /** Push the riders the moment the driver sets off. */
   announceOnDepart: boolean;
   cancelledAtMin?: Minutes;
+  /**
+   * The fuel contribution each rider pays the driver directly, in naira, or
+   * undefined for a free ride. Corridor never handles it.
+   */
+  contributionNaira?: number;
 };
 
 /**

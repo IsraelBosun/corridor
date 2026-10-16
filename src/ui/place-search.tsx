@@ -11,12 +11,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useMyLocation } from '@/lib/location';
 import type { LngLat } from '@/lib/mapbox';
-import { searchPlaces, type Place } from '@/lib/places';
+import { nameForPoint, searchPlaces, type Place } from '@/lib/places';
 import { color, font, GUTTER, radius, space, themed } from '@/theme/tokens';
-import { BackIcon, CloseIcon, PinIcon, SearchIcon } from './icons';
+import { BackIcon, CloseIcon, LocateIcon, PinIcon, SearchIcon } from './icons';
 import { Text } from './text';
 
 const LAGOS: LngLat = { lat: 6.5, lng: 3.4 };
+/** Mapbox is not asked about anything shorter, so neither is "nothing found" said. */
+const MIN_QUERY = 3;
 
 /**
  * Search for a place in Lagos.
@@ -32,6 +34,7 @@ export function PlaceSearch({
   onBack,
   after,
   privacy,
+  offerHere,
 }: {
   placeholder: string;
   /** Shown before anything is typed. */
@@ -43,12 +46,30 @@ export function PlaceSearch({
   /** Below the results, such as a way to clear the current choice. */
   after?: ReactNode;
   privacy: string;
+  /** Offer "use my current location" above the results. */
+  offerHere?: boolean;
 }) {
   const me = useMyLocation();
   const [query, setQuery] = useState('');
   const [remote, setRemote] = useState<Place[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
+
+  // Where the phone is now, named after the nearest place or street, never a
+  // house number. The driver sees the name before anything is posted.
+  async function pickHere() {
+    if (!me || locating) return;
+    setLocating(true);
+    setError(null);
+    try {
+      onPick(await nameForPoint(me));
+    } catch {
+      setError('Could not name where you are. Search for it instead.');
+    } finally {
+      setLocating(false);
+    }
+  }
 
   // Results lean towards where the phone is, or the middle of Lagos when that
   // is not known. The first fix only: a moving dot must not rerun the search.
@@ -65,7 +86,7 @@ export function PlaceSearch({
   // next keystroke rather than allowed to land out of order.
   const abort = useRef<AbortController | null>(null);
   useEffect(() => {
-    if (query.trim().length < 2) {
+    if (query.trim().length < MIN_QUERY) {
       setRemote([]);
       setBusy(false);
       return;
@@ -119,6 +140,28 @@ export function PlaceSearch({
       </View>
 
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.list}>
+        {offerHere && !q ? (
+          <Pressable
+            onPress={pickHere}
+            disabled={!me || locating}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !me || locating }}
+            style={({ pressed }) => [s.result, !me && s.off, pressed && s.pressed]}>
+            <View style={[s.pin, s.herePin]}>
+              <LocateIcon size={18} tint={color.onInk} />
+            </View>
+            <View style={s.flex}>
+              <Text variant="body" style={s.name}>
+                {locating ? 'Finding where you are' : 'Use my current location'}
+              </Text>
+              <Text variant="small" tone="muted" numberOfLines={1}>
+                {me ? 'Riders meet you where you are standing now' : 'Turn on location to use this'}
+              </Text>
+            </View>
+            {locating ? <ActivityIndicator color={color.inkFaint} /> : null}
+          </Pressable>
+        ) : null}
+
         {!q ? (
           <>
             <Text variant="small" tone="muted" style={s.label}>
@@ -159,7 +202,7 @@ export function PlaceSearch({
           </Pressable>
         ))}
 
-        {q.length > 1 && !busy && results.length === 0 ? (
+        {q.length >= MIN_QUERY && !busy && !error && results.length === 0 ? (
           <Text variant="small" tone="muted" style={s.note}>
             Nothing by that name in Lagos. Try the estate, bus stop or landmark nearest to it.
           </Text>
@@ -228,6 +271,8 @@ const s = themed(() =>
     justifyContent: 'center',
   },
   name: { fontWeight: '600' },
+  herePin: { backgroundColor: color.brand },
+  off: { opacity: 0.5 },
   current: { fontWeight: '600' },
   note: { paddingTop: space.lg },
   privacy: { paddingTop: space.lg },
