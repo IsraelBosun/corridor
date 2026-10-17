@@ -25,6 +25,9 @@ const CODE_MAX = 10;
  */
 export default function SignInScreen() {
   const [intro, setIntro] = useState<boolean | null>(null);
+  // Whoever just sat through the intro is almost always new, so they land on
+  // create account. Everyone else lands on sign in.
+  const [fresh, setFresh] = useState(false);
 
   useEffect(() => {
     hasOnboarded().then((seen) => setIntro(!seen));
@@ -36,12 +39,13 @@ export default function SignInScreen() {
       <Onboarding
         onDone={() => {
           markOnboarded();
+          setFresh(true);
           setIntro(false);
         }}
       />
     );
   }
-  return USING_LOCAL ? <LocalAccounts /> : <EmailSignIn />;
+  return USING_LOCAL ? <LocalAccounts /> : <EmailSignIn startCreating={fresh} />;
 }
 
 /**
@@ -57,9 +61,9 @@ export default function SignInScreen() {
  */
 const SELF_SIGN_UP = true;
 
-function EmailSignIn() {
+function EmailSignIn({ startCreating }: { startCreating: boolean }) {
   const { signIn, signUp } = useSession();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(SELF_SIGN_UP && startCreating);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
