@@ -7,7 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useMyLocation } from '@/lib/location';
 import type { LngLat } from '@/lib/mapbox';
@@ -55,6 +55,15 @@ export function PlaceSearch({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  const insets = useSafeAreaInsets();
+  const field = useRef<TextInput>(null);
+
+  // Not autoFocus: on iOS a field inside a Modal mounts before the modal is
+  // presented, the focus is lost, and no keyboard comes up. Wait for the slide.
+  useEffect(() => {
+    const t = setTimeout(() => field.current?.focus(), 350);
+    return () => clearTimeout(t);
+  }, []);
 
   // Where the phone is now, named after the nearest place or street, never a
   // house number. The driver sees the name before anything is posted.
@@ -112,7 +121,19 @@ export function PlaceSearch({
   const results = q ? remote : [];
 
   return (
-    <SafeAreaView style={s.screen} edges={['top', 'left', 'right', 'bottom']}>
+    // Insets from the hook, not SafeAreaView: inside an iOS Modal SafeAreaView
+    // reads a top inset of 0, and the status band (which uses this hook) was
+    // drawn over the whole search bar. The same numbers keep the two in step.
+    <View
+      style={[
+        s.screen,
+        {
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
+        },
+      ]}>
       <View style={s.bar}>
         <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="Go back" style={s.back}>
           <BackIcon />
@@ -121,8 +142,8 @@ export function PlaceSearch({
           <SearchIcon size={18} tint={color.brand} />
           <TextInput
             value={query}
+            ref={field}
             onChangeText={setQuery}
-            autoFocus
             style={s.input}
             placeholder={placeholder}
             placeholderTextColor={color.inkFaint}
@@ -219,7 +240,7 @@ export function PlaceSearch({
           {privacy}
         </Text>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
