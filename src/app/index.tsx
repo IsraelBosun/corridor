@@ -19,7 +19,7 @@ import { AlertIcon, ChatIcon, ChevronIcon, PinIcon, PlusIcon } from '@/ui/icons'
 import { Avatar, Button, SectionTitle } from '@/ui/primitives';
 import { BottomSheet } from '@/ui/sheet';
 import { Text } from '@/ui/text';
-import { TripMap, useRiderDrops } from '@/ui/trip-map';
+import { DirectionsButton, RidesMap, TripMap, useRiderDrops } from '@/ui/trip-map';
 import { TripRow } from '@/ui/trip-row';
 
 /**
@@ -91,13 +91,25 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop }: Layout) {
 
   return (
     <View style={s.screen}>
-      <TripMap
-        origin={drawn?.origin}
-        destination={drawn?.destination}
-        dropOff={dropOff}
-        padding={{ top: topBar + space.xl, bottom: collapsed + space.lg, left: 40, right: 40 }}
-        controlsBottom={collapsed + space.md}
-      />
+      {drawn || loading ? (
+        <TripMap
+          origin={drawn?.origin}
+          destination={drawn?.destination}
+          dropOff={dropOff}
+          padding={{ top: topBar + space.xl, bottom: collapsed + space.lg, left: 40, right: 40 }}
+          controlsBottom={collapsed + space.md}
+        />
+      ) : (
+        // Choosing a ride: the ones that suit you, or every ride when none do.
+        // The bottom padding clears the ride card as well as the sheet.
+        <RidesMap
+          trips={passing.length > 0 ? passing : others}
+          dropOff={dropOff}
+          padding={{ top: topBar + space.xl, bottom: collapsed + 84, left: 40, right: 40 }}
+          controlsBottom={collapsed + space.md}
+          onOpen={(id) => router.push({ pathname: '/trip/[id]', params: { id } })}
+        />
+      )}
 
       <TopBar insetTop={insetTop}>
         <Pressable
@@ -177,6 +189,8 @@ function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
   const shown = myTrip ?? onTheWay;
   // Everyone booked shows where they get off, numbered in drop off order.
   const drops = useRiderDrops(shown, shown?.riders ?? []);
+  // Once moving, only the people who got in have a drop off to drive to.
+  const aboardDrops = drops.filter((d) => onTheWay?.presentAt[d.id]);
 
   return (
     <View style={s.screen}>
@@ -222,6 +236,7 @@ function DriverHome({ topBar, collapsed, expanded, insetTop }: Layout) {
               kind="secondary"
               onPress={() => router.push({ pathname: '/pickup/[id]', params: { id: onTheWay.id } })}
             />
+            <DirectionsButton trip={onTheWay} drops={aboardDrops} />
           </View>
         ) : (
           <View style={s.block}>

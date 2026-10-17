@@ -40,7 +40,8 @@ import { Text } from './text';
  * - Markers sit in their own layer and are placed per frame, so they stay the
  *   same size while the map zooms under them.
  *
- * It still never takes a tap to place a point. Moving the map records
+ * A tap can pick a marker that asks for it (a ride's pickup, say), but it
+ * still never takes a tap to place a point. Moving the map records
  * nothing: a map that accepts a pin becomes a way to store where somebody
  * lives, and rule 2 exists to stop exactly that.
  */
@@ -52,11 +53,14 @@ export type MapMarker = {
   /**
    * start: the pickup. end: the far end of a route. stop: a stop on the way.
    * drop: where you get off. rider: a rider's drop off, shown to their driver.
+   * ride: the pickup of a ride on the list that is not the one picked out.
    */
-  kind: 'start' | 'end' | 'stop' | 'drop' | 'rider';
+  kind: 'start' | 'end' | 'stop' | 'drop' | 'rider' | 'ride';
   label?: string;
   /** For a rider's drop off: their place in the drop off order, from 1. */
   num?: number;
+  /** Set to make the marker tappable: what onMarkerPress is told was tapped. */
+  tap?: string;
 };
 
 export type MapRoute = {
@@ -76,6 +80,9 @@ const MAX_TILE_Z = 18;
 const MARGIN = 1;
 
 const NO_PADDING: Padding = { top: 0, bottom: 0, left: 0, right: 0 };
+
+/** How close to a marker a tap must land, in screen points. A fingertip, not a dot. */
+const HIT = 26;
 
 /**
  * The zoom the outer layer's transform is expressed in. Fixed, so placing the
@@ -200,6 +207,7 @@ export function MapView({
   showFrameButton = true,
   controlsBottom = space.md,
   me,
+  onMarkerPress,
 }: {
   routes?: MapRoute[];
   markers?: MapMarker[];
@@ -212,6 +220,11 @@ export function MapView({
   controlsBottom?: number;
   /** This phone's position, drawn as a live dot. Never part of the framing. */
   me?: LngLat | null;
+  /**
+   * A tap on tappable markers: every tap value under the finger, nearest
+   * first, since pickups at the same office sit on top of each other.
+   */
+  onMarkerPress?: (taps: string[]) => void;
 }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [drawn, setDrawn] = useState<Drawn | null>(null);
@@ -368,6 +381,7 @@ export function MapView({
 
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
+    .maxDelay(250)
     .onEnd((e) => {
       const world = TILE * 2 ** z.value;
       const px = cx.value + (e.x - fw.value / 2) / world;
@@ -383,7 +397,16 @@ export function MapView({
       scheduleOnRN(markMoved);
     });
 
-  const gesture = Gesture.Simultaneous(pan, pinch, doubleTap);
+  // A single tap waits for the double tap to fail, so zooming in never also
+  // picks a marker. It only exists when something on the map is tappable.
+  const singleTap = Gesture.Tap()
+    .numberOfTaps(1)
+    .enabled(!!onMarkerPress)
+    .onEnd((e) => {
+      scheduleOnRN(tapAt, e.x, e.y, cx.value, cy.value, z.value);
+    });
+
+  const gesture = Gesture.Simultaneous(pan, pinch, Gesture.Exclusive(doubleTap, singleTap));
 
   // The layer is laid out in fixed deep zoom pixels around a fixed anchor, so
   // placing it depends on the live camera alone. Nothing React draws later can
@@ -411,6 +434,22 @@ export function MapView({
     () => markers.map((m) => ({ ...m, ...toUnit(m.lat, m.lng) })),
     [markers]
   );
+
+  /** Which tappable markers are under a tap, worked out from where the camera was. */
+  function tapAt(x: number, y: number, ccx: number, ccy: number, cz: number) {
+    if (!onMarkerPress) return;
+    const world = TILE * 2 ** cz;
+    const hits = unitMarkers
+      .filter((m) => m.tap !== undefined)
+      .map((m) => ({
+        tap: m.tap as string,
+        d: Math.hypot((m.x - ccx) * world + size.w / 2 - x, (m.y - ccy) * world + size.h / 2 - y),
+      }))
+      .filter((h) => h.d <= HIT)
+      .sort((a, b) => a.d - b.d);
+    const taps = [...new Set(hits.map((h) => h.tap))];
+    if (taps.length > 0) onMarkerPress(taps);
+  }
 
   // Routes in level pixels, simplified to what the current tile level can
   // show. Worked out once per level, not once per frame.
@@ -732,7 +771,9 @@ function Marker({
                   ? s.dotEnd
                   : marker.kind === 'drop'
                     ? s.dotDrop
-                    : s.dotStop
+                    : marker.kind === 'ride'
+                      ? s.dotRide
+                      : s.dotStop
             }
           />
         )}
@@ -821,6 +862,16 @@ const s = themed(() => {
     height: 13,
     borderRadius: 3,
     backgroundColor: MAP.dot,
+  },
+  // Another ride's pickup: the start dot, smaller and quieter.
+  dotRide: {
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    backgroundColor: MAP.startFill,
+    borderWidth: 2.5,
+    borderColor: MAP.startRing,
+    opacity: 0.85,
   },
   dotStop: {
     width: 8,

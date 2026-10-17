@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { useStore } from '@/data/store';
+import { endName, seatsOpen, useStore } from '@/data/store';
 import type { Destination, DropOff, Trip } from '@/data/types';
 import { useRoad } from '@/lib/directions';
 import { useMyLocation } from '@/lib/location';
 import type { LngLat } from '@/lib/mapbox';
+import { openDirections } from '@/lib/navigate';
+import { hhmm } from '@/lib/time';
+import { color, elevation, radius, space, themed } from '@/theme/tokens';
+import { showDialog } from './dialog';
+import { ChevronIcon } from './icons';
 import { MapView, type MapMarker, type MapRoute, type Padding } from './map';
+import { Button } from './primitives';
+import { Text } from './text';
 
 /**
  * Lagos, roughly from Ikeja down to the coast and out to Ajah, for a map with
@@ -152,3 +160,184 @@ export function useRiderDrops(trip: Trip | undefined, riderIds: string[]): Rider
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip, key, person, alongRoute]);
 }
+
+/**
+ * The drive in Google Maps: every drop off with a place, in order, then where
+ * the driver is going. For a driver on the way, on their own tap.
+ */
+export function DirectionsButton({ trip, drops }: { trip: Trip; drops: RiderDrop[] }) {
+  const stops = drops
+    .filter((d) => d.lat !== undefined && d.lng !== undefined)
+    .map((d) => ({ lat: d.lat as number, lng: d.lng as number }));
+  const end = trip.destination ? { lat: trip.destination.lat, lng: trip.destination.lng } : undefined;
+  if (!end && stops.length === 0) return null;
+
+  async function go() {
+    const ok = await openDirections(stops, end);
+    if (!ok) showDialog('Google Maps did not open', 'Try again, or follow the drop offs listed here.', [{ text: 'OK' }], 'alert');
+  }
+
+  return <Button label={stops.length > 0 ? 'Drop offs in Google Maps' : 'Directions in Google Maps'} kind="secondary" onPress={go} />;
+}
+
+/** More than this and the roads turn into a tangle nobody can read. */
+const MAX_RIDES = 8;
+
+/**
+ * Tonight's rides on the map, for someone choosing one.
+ *
+ * Every ride is a quiet road with a small dot where it starts. One is picked
+ * out, the soonest to begin with: its road is drawn in full, and a card above
+ * the sheet says when it leaves and opens it. Tapping a dot or the far end of
+ * another ride picks that one instead. Pickups at the same place sit on top
+ * of each other, so tapping the stack again moves to the next ride in it.
+ *
+ * Only what the list already shows: where each ride starts and where its
+ * driver is going. Nobody's position but the viewer's own.
+ */
+export function RidesMap({
+  trips,
+  dropOff,
+  padding,
+  controlsBottom = space.md,
+  onOpen,
+}: {
+  /** The rides to draw, best first. Only the first few are drawn. */
+  trips: Trip[];
+  dropOff?: DropOff | null;
+  padding?: Padding;
+  controlsBottom?: number;
+  onOpen: (tripId: string) => void;
+}) {
+  const { routeOf } = useStore();
+  const me = useMyLocation();
+  const [firstFix, setFirstFix] = useState<LngLat | null>(me);
+  useEffect(() => {
+    if (me && !firstFix) setFirstFix(me);
+  }, [me, firstFix]);
+
+  const shown = useMemo(() => trips.filter((t) => t.origin).slice(0, MAX_RIDES), [trips]);
+  const [picked, setPicked] = useState<string | undefined>(undefined);
+  // The ride picked out, or the first one when nothing is (or it has gone).
+  const current = shown.find((t) => t.id === picked) ?? shown[0];
+
+  const drop = useMemo(
+    () =>
+      dropOff && typeof dropOff.lat === 'number' && typeof dropOff.lng === 'number'
+        ? { lat: dropOff.lat, lng: dropOff.lng }
+        : null,
+    [dropOff]
+  );
+
+  const routes = useMemo<MapRoute[]>(
+    () =>
+      shown
+        .map((t) => ({ id: t.id, points: routeOf(t).line, tone: t.id === current?.id ? 'primary' : 'muted' }) as MapRoute)
+        .filter((r) => r.points.length >= 2),
+    [shown, current, routeOf]
+  );
+
+  const markers = useMemo<MapMarker[]>(() => {
+    const out: MapMarker[] = [];
+    // The others first, so the picked ride's dots are drawn over them.
+    for (const t of shown) {
+      if (t.id === current?.id || !t.origin) continue;
+      out.push({ id: `start-${t.id}`, lat: t.origin.lat, lng: t.origin.lng, kind: 'ride', tap: t.id });
+      if (t.destination) {
+        out.push({ id: `end-${t.id}`, lat: t.destination.lat, lng: t.destination.lng, kind: 'stop', tap: t.id });
+      }
+    }
+    if (current?.origin) {
+      out.push({ id: 'start', lat: current.origin.lat, lng: current.origin.lng, kind: 'start', tap: current.id });
+    }
+    if (current?.destination) {
+      out.push({
+        id: 'end',
+        lat: current.destination.lat,
+        lng: current.destination.lng,
+        kind: 'end',
+        label: current.destination.name,
+        tap: current.id,
+      });
+    }
+    if (drop && dropOff) out.push({ id: 'drop', lat: drop.lat, lng: drop.lng, kind: 'drop', label: dropOff.name });
+    return out;
+  }, [shown, current, drop, dropOff]);
+
+  // Every ride drawn, and where this phone first was, so the walk to a pickup
+  // is on screen. Picking a ride does not move the camera.
+  const fit = useMemo<LngLat[]>(() => {
+    const all: LngLat[] = [];
+    for (const t of shown) {
+      if (t.origin) all.push({ lat: t.origin.lat, lng: t.origin.lng });
+      if (t.destination) all.push({ lat: t.destination.lat, lng: t.destination.lng });
+    }
+    if (firstFix) all.push(firstFix);
+    if (drop) all.push(drop);
+    return all.length > 0 ? all : LAGOS;
+  }, [shown, firstFix, drop]);
+
+  function onMarkerPress(taps: string[]) {
+    // Not the picked ride under the finger: pick the first that is. Only the
+    // picked one there: nothing to change, the card already opens it.
+    const i = current ? taps.indexOf(current.id) : -1;
+    const next = i === -1 ? taps[0] : taps[(i + 1) % taps.length];
+    if (next !== current?.id) setPicked(next);
+  }
+
+  const left = current ? seatsOpen(current) : 0;
+
+  return (
+    <View style={c.wrap}>
+      <MapView
+        routes={routes}
+        markers={markers}
+        fit={fit}
+        padding={padding}
+        controlsBottom={controlsBottom}
+        me={me}
+        onMarkerPress={shown.length > 1 ? onMarkerPress : undefined}
+      />
+      {current ? (
+        <Pressable
+          onPress={() => onOpen(current.id)}
+          accessibilityRole="button"
+          accessibilityLabel={`Ride leaving ${hhmm(current.departMin)} to ${endName(current)}. See this ride`}
+          style={({ pressed }) => [c.card, { bottom: controlsBottom }, pressed && c.pressed]}>
+          <View style={c.flex}>
+            <Text variant="heading" numberOfLines={1}>
+              {hhmm(current.departMin)} to {endName(current)}
+            </Text>
+            <Text variant="small" tone="muted" numberOfLines={1}>
+              {left === 0 ? 'Full' : `${left} ${left === 1 ? 'seat' : 'seats'} left`}
+              {shown.length > 1 ? `. ${shown.length} rides on the map, tap a dot` : ''}
+            </Text>
+          </View>
+          <ChevronIcon size={18} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+const c = themed(() =>
+  StyleSheet.create({
+    wrap: { flex: 1 },
+    flex: { flex: 1 },
+    // Left of the map buttons, which stack up the right edge.
+    card: {
+      position: 'absolute',
+      left: space.md,
+      right: space.md + 44 + space.sm,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      backgroundColor: color.surface,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+      ...elevation,
+    },
+    pressed: { opacity: 0.7 },
+  })
+);

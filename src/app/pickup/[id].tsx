@@ -11,7 +11,7 @@ import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
 import { Avatar, Button, Callout, Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
 import { Text } from '@/ui/text';
-import { TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
+import { DirectionsButton, TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
 
 export default function PickupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -272,6 +272,8 @@ function OnTheirWay({ trip }: { trip: Trip }) {
           padding={{ top: 44, bottom: 36, left: 36, right: 36 }}
         />
       </View>
+
+      <DirectionsButton trip={trip} drops={route} />
 
       {route.length > 0 ? (
         <>
