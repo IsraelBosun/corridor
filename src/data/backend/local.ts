@@ -345,6 +345,11 @@ export const localBackend: Backend = {
     return false;
   },
 
+  // Everyone in test mode is on this one phone, so there is nobody to push to.
+  async savePushToken() {},
+
+  async forgetPushToken() {},
+
   async getPayout(userId) {
     const me = await requireUser();
     const d = await db();

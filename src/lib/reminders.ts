@@ -21,6 +21,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
 import type { Role } from '@/data/types';
+import { registerForPush } from '@/lib/push';
 
 const KEY = 'corridor.reminders';
 const CHANNEL = 'reminders';
@@ -169,8 +170,9 @@ const handled = new Set<string>();
 export function useReminders(role: Role) {
   const router = useRouter();
 
+  // One after the other, so the phone never asks for permission twice at once.
   useEffect(() => {
-    syncReminders(role);
+    syncReminders(role).finally(() => registerForPush(notifications()));
   }, [role]);
 
   useEffect(() => {

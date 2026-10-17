@@ -128,6 +128,16 @@ export const supabaseBackend: Backend = {
     return !error && data === true;
   },
 
+  async savePushToken(token, platform) {
+    const { error } = await supabase.rpc('save_push_token', { p_token: token, p_platform: platform });
+    fail(error);
+  },
+
+  async forgetPushToken(token) {
+    const { error } = await supabase.rpc('forget_push_token', { p_token: token });
+    fail(error);
+  },
+
   async signOut() {
     await supabase.auth.signOut();
   },

@@ -137,6 +137,12 @@ export interface Backend {
   /** On the testers list: may switch riding and driving at any time. */
   isTester(): Promise<boolean>;
 
+  // Push
+  /** Where this phone gets pushes, such as a driver being told a seat was taken. */
+  savePushToken(token: string, platform: 'ios' | 'android'): Promise<void>;
+  /** On signing out, so the next person on this phone does not get them. */
+  forgetPushToken(token: string): Promise<void>;
+
   // Profiles
   getProfile(userId: string): Promise<ProfileRow | null>;
   /** Create or replace the signed in person's own profile. */

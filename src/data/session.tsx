@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 import { backend, type AuthSession, type Membership, type ProfileRow } from './backend';
 import type { DropOff, Person, Role } from './types';
+import { forgetPush } from '@/lib/push';
 
 /**
  * Who is signed in, and are they one of us.
@@ -298,6 +299,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    await forgetPush();
     await backend.signOut();
   }, []);
 
