@@ -14,8 +14,8 @@ import { backend, type MessageRow } from './backend';
  * backend enforces that: only the driver and the confirmed riders can read or
  * write a trip's messages.
  *
- * Messages live and die with the trip. When the overnight purge removes the
- * trip, the conversation goes with it.
+ * Messages are kept with the trip, for good, as the record of what was said.
+ * Only the people on the ride can read them in the app.
  */
 
 export type Message = {

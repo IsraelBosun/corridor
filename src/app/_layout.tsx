@@ -21,6 +21,7 @@ import { StoreProvider } from '@/data/store';
 import { backendReady } from '@/data/backend';
 import { justSwitchedTheme, ThemeProvider } from '@/theme/theme';
 import { color, space, themed } from '@/theme/tokens';
+import { AuthLink } from '@/lib/auth-link';
 import { OtaUpdates } from '@/lib/updates';
 import { DialogHost } from '@/ui/dialog';
 import { StatusBand } from '@/ui/status-band';
@@ -70,6 +71,7 @@ export default function RootLayout() {
               <StatusBand />
               <DialogHost />
               <OtaUpdates />
+              <AuthLink />
             </SessionProvider>
           </GestureHandlerRootView>
         )

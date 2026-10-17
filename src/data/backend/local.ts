@@ -115,7 +115,12 @@ CREATE TABLE IF NOT EXISTS messages (
 /** Same pattern as the check constraint on corridor.messages. */
 const PHONE_SHAPED = /[0-9][0-9 ()+-]{8,}/;
 
-const LIVE = "('posted', 'boarding')";
+/**
+ * Live: posted or boarding, and departing less than 8 hours ago, as
+ * corridor.live_cutoff() on the server. Old rides are kept, never cleared.
+ */
+const liveWhere = (p = '') =>
+  `${p}status IN ('posted', 'boarding') AND ${p}depart_at > '${new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString()}'`;
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -163,9 +168,7 @@ function db(): Promise<SQLite.SQLiteDatabase> {
         DELETE FROM trip_stops WHERE landmark_id <> 'marina';
         DELETE FROM landmarks WHERE id <> 'marina';
       `);
-      // Rule 2: nothing survives the evening. Same cut off as purge_yesterday().
-      const cutoff = new Date(Date.now() - 8 * 3600 * 1000).toISOString();
-      await d.runAsync('DELETE FROM trips WHERE depart_at < ?', cutoff);
+      // Old rides are kept, as on the server. listTrips shows only tonight's.
       return d;
     })();
   }
@@ -236,12 +239,12 @@ async function ownTrip(tripId: string, userId: string) {
 async function liveCommitments(userId: string) {
   const d = await db();
   const driving = await d.getFirstAsync<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND status IN ${LIVE}`,
+    `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND ${liveWhere()}`,
     userId
   );
   const riding = await d.getFirstAsync<{ n: number }>(
     `SELECT COUNT(*) AS n FROM reservations r JOIN trips t ON t.id = r.trip_id
-     WHERE r.rider_id = ? AND t.status IN ${LIVE}`,
+     WHERE r.rider_id = ? AND ${liveWhere('t.')}`,
     userId
   );
   return { driving: (driving?.n ?? 0) > 0, riding: (riding?.n ?? 0) > 0 };
@@ -427,10 +430,11 @@ export const localBackend: Backend = {
     return d.getAllAsync<ProfileRow>('SELECT * FROM profiles');
   },
 
-  async listTrips() {
+  async listTrips(since) {
     const d = await db();
     const trips = await d.getAllAsync<Omit<TripRow, 'reservations' | 'announce_on_depart'> & { announce_on_depart: number }>(
-      'SELECT id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira FROM trips ORDER BY depart_at'
+      'SELECT id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira FROM trips WHERE depart_at > ? ORDER BY depart_at',
+      since
     );
     const res = await d.getAllAsync<{ trip_id: string; rider_id: string; present_at: string | null }>(
       'SELECT trip_id, rider_id, present_at FROM reservations ORDER BY reserved_at'
@@ -458,7 +462,7 @@ export const localBackend: Backend = {
     await d.withExclusiveTransactionAsync(async (tx) => {
       // One live ride per driver, as the unique index does on the server.
       const live = await tx.getFirstAsync<{ n: number }>(
-        `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND status IN ${LIVE}`,
+        `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND ${liveWhere()}`,
         me
       );
       if ((live?.n ?? 0) > 0) throw new Error('You already have a ride posted tonight. Edit that one instead.');
@@ -543,7 +547,7 @@ export const localBackend: Backend = {
       // One seat at a time, across the whole corridor.
       const elsewhere = await tx.getFirstAsync<{ n: number }>(
         `SELECT COUNT(*) AS n FROM reservations r JOIN trips t ON t.id = r.trip_id
-         WHERE r.rider_id = ? AND t.status IN ${LIVE} AND t.id <> ?`,
+         WHERE r.rider_id = ? AND ${liveWhere('t.')} AND t.id <> ?`,
         me, tripId
       );
       if ((elsewhere?.n ?? 0) > 0) throw new Error('You already have a seat tonight. Give it up first.');

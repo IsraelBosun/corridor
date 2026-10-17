@@ -213,7 +213,9 @@ function EmailSignIn() {
         </Text>
       ) : checkInbox ? (
         <Text variant="small" tone="go" style={s.note}>
-          Check {email.trim()} for a confirmation link, then sign in.
+          Check {email.trim()} for a confirmation link. Open it on this phone and
+          Corridor signs you in. Opened anywhere else, it still confirms you: come
+          back here and sign in.
         </Text>
       ) : null}
     </AuthScreen>

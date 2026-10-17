@@ -151,7 +151,8 @@ export interface Backend {
   savePayout(userId: string, row: PayoutRow | null): Promise<void>;
 
   // The corridor
-  listTrips(): Promise<TripRow[]>;
+  /** Rides departing after `since` (ISO time). Older ones are kept, not shown. */
+  listTrips(since: string): Promise<TripRow[]>;
   /** Called whenever a trip or a reservation changes. Returns an unsubscribe. */
   onTripsChange(cb: () => void): () => void;
 

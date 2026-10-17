@@ -112,6 +112,8 @@ type Store = {
    * the drop offs in the order they happen.
    */
   alongRoute: (trip: Trip, place: LngLat) => number;
+  /** The road a trip drives, or straight lines between its points until that arrives. */
+  routeOf: (trip: Trip) => { line: LngLat[]; road: boolean };
 
   /** Tonight's live ride you are driving, if any. */
   myTrip: Trip | undefined;
@@ -165,10 +167,9 @@ const FINISHED_KEY = 'corridor.finished-rides';
 const RIDE_MAX_MIN = 180;
 
 /**
- * Older than this and a ride is last night's. Same cut off as
- * purge_yesterday(), which deletes these rows overnight when its job is
- * switched on. The app does not count on that: without it, yesterday's rides
- * would come back every evening looking like tonight's.
+ * Older than this and a ride is last night's. Rides are kept for good, so the
+ * app asks only for tonight's. Same window as corridor.live_cutoff(), which
+ * stops an old ride nobody closed from counting as anyone's live ride or seat.
  */
 const STALE_MS = 8 * 60 * 60 * 1000;
 
@@ -181,27 +182,6 @@ const STALE_MS = 8 * 60 * 60 * 1000;
 const NEAR_ROAD_M = 1500;
 /** Before the road has loaded, the route is straight lines, so allow more. */
 const NEAR_LINE_M = 2000;
-
-/**
- * Last night's ride still marked live counts as your one live ride, or your
- * one seat, and the database would refuse tonight's post or booking because of
- * it. Each person tidies their own: a driver cancels theirs, a rider gives up
- * theirs. Quietly, since nobody is waiting on a ride from yesterday.
- */
-function clearStale(rows: TripRow[], meId: string) {
-  for (const r of rows) {
-    if (r.status !== 'posted' && r.status !== 'boarding') continue;
-    const work =
-      r.driver_id === meId
-        ? backend.cancelTrip(r.id)
-        : r.reservations.some((x) => x.rider_id === meId)
-          ? backend.releaseSeat(r.id, meId)
-          : null;
-    work?.catch(() => {
-      // Tried again on the next load.
-    });
-  }
-}
 
 /**
  * Can a rider still take a seat. Not once it has left, and not once it is
@@ -241,12 +221,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     try {
-      const [tripRows, profileRows] = await Promise.all([backend.listTrips(), backend.listProfiles()]);
+      // Old rides are left alone, never cancelled or emptied: they are the
+      // record of who rode with whom.
+      const since = new Date(Date.now() - STALE_MS).toISOString();
+      const [tripRows, profileRows] = await Promise.all([backend.listTrips(since), backend.listProfiles()]);
       setError(null);
-      const cutoff = Date.now() - STALE_MS;
-      const stale = tripRows.filter((r) => new Date(r.depart_at).getTime() < cutoff);
-      setTrips(tripRows.filter((r) => !stale.includes(r)).map(toTrip));
-      clearStale(stale, session.userId);
+      setTrips(tripRows.map(toTrip));
       const map: Record<string, Person> = {};
       for (const row of profileRows) map[row.id] = toPerson(row);
       setPeople(map);
@@ -349,7 +329,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   // Rides that are over for this person. A trip has no "arrived" state: the
   // car is on the road until each person says they are done, so that is kept
-  // on this phone, by trip id, and goes when the trip is purged.
+  // on this phone, by trip id, and dropped once the trip is past tonight.
   const [finished, setFinished] = useState<Set<string>>(new Set());
   // Ticks, so a ride left on the road with nobody saying it is over still ends.
   const now = useNow();
@@ -479,6 +459,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       dropOffName,
       serves,
       alongRoute,
+      routeOf,
       myTrip,
       mySeat,
       underway,
@@ -496,7 +477,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       trips, loading, error, clearError, me, role, people, person,
-      dropOff, dropOffName, serves, alongRoute, myTrip, mySeat, underway, finishRide, setDropOff, refresh, reserve, releaseSeat,
+      dropOff, dropOffName, serves, alongRoute, routeOf, myTrip, mySeat, underway, finishRide, setDropOff, refresh, reserve, releaseSeat,
       cancelTrip, markPresent, markAbsent, depart, postTrip, editTrip,
     ]
   );

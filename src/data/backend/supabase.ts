@@ -1,3 +1,5 @@
+import * as Linking from 'expo-linking';
+
 import { supabase } from '@/lib/supabase';
 import type { AuthSession, Backend, Membership, MessageRow, PayoutRow, ProfileRow, TripRow } from './types';
 
@@ -58,7 +60,14 @@ export const supabaseBackend: Backend = {
   },
 
   async signUp(email, password) {
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    // The confirm link opens the app (corridor://, or exp:// in Expo Go), where
+    // AuthLink signs them in. Supabase only follows it if it is on the
+    // project's Redirect URLs list; otherwise it falls back to the Site URL.
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: Linking.createURL('/') },
+    });
     fail(error);
     return { needsConfirm: !data.session };
   },
@@ -170,8 +179,12 @@ export const supabaseBackend: Backend = {
     fail(error);
   },
 
-  async listTrips() {
-    const { data, error } = await supabase.from('trips').select(TRIP_SELECT).order('depart_at');
+  async listTrips(since) {
+    const { data, error } = await supabase
+      .from('trips')
+      .select(TRIP_SELECT)
+      .gt('depart_at', since)
+      .order('depart_at');
     fail(error);
     return (data ?? []) as TripRow[];
   },

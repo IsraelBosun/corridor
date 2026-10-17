@@ -93,8 +93,8 @@ export const supabase = createClient(URL ?? 'https://unconfigured.invalid', ANON
     storage: Platform.OS === 'web' ? webAdapter : secureAdapter,
     autoRefreshToken: true,
     persistSession: true,
-    // No magic links and no OAuth redirects, so there is never a session in a
-    // URL to detect. Codes are typed in by hand.
+    // Web only, and this app is native. The one link that carries a session,
+    // the sign-up confirmation, is read by AuthLink (lib/auth-link.tsx).
     detectSessionInUrl: false,
   },
 });
