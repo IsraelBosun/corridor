@@ -135,7 +135,8 @@ export async function syncReminders(role: Role, askPermission = true): Promise<S
       WEEKDAYS.map((weekday) =>
         N.scheduleNotificationAsync({
           identifier: `${PREFIX}${weekday}`,
-          content: { title: copy.title, body: copy.body, data: { url: copy.url } },
+          // iOS stays silent unless a sound is asked for. Android takes it from the channel.
+          content: { title: copy.title, body: copy.body, sound: 'default', data: { url: copy.url } },
           trigger: {
             type: N.SchedulableTriggerInputTypes.WEEKLY,
             channelId: CHANNEL,
