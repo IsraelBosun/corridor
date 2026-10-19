@@ -1,5 +1,5 @@
-import { useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTripChat } from '@/data/chat';
 import { useStore, useTrip } from '@/data/store';
+import { setOpenChat } from '@/lib/reminders';
 import { hhmm } from '@/lib/time';
 import { color, font, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ArrowIcon, LockIcon } from '@/ui/icons';
@@ -28,6 +29,14 @@ export default function ChatScreen() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const scroller = useRef<ScrollView>(null);
+
+  // While this chat is on screen, its new messages arrive here, not as a push banner.
+  useFocusEffect(
+    useCallback(() => {
+      setOpenChat(id);
+      return () => setOpenChat(null);
+    }, [id]),
+  );
 
   useEffect(() => {
     // New message, so follow it down. Chat that does not do this makes people

@@ -240,12 +240,14 @@ export default function TripScreen() {
                   <Text variant="small" tone="muted">
                     {payout.bankName}
                   </Text>
-                  {/* Long press to copy. */}
                   <Text variant="dataLarge" selectable style={s.accountNumber}>
                     {payout.accountNumber}
                   </Text>
                   <Text variant="small" style={s.bold} selectable>
                     {payout.accountName}
+                  </Text>
+                  <Text variant="small" tone="faint">
+                    Press and hold the number to copy it.
                   </Text>
                 </View>
               ) : mine ? (

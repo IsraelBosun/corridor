@@ -36,6 +36,14 @@ export const REMINDERS_UNAVAILABLE =
 
 let loaded: typeof NotificationsModule | null | undefined;
 
+/** The trip whose chat is on screen, so its own messages do not buzz. */
+let openChat: string | null = null;
+
+/** Called by the chat screen as it comes into and goes out of view. */
+export function setOpenChat(tripId: string | null) {
+  openChat = tripId;
+}
+
 /** expo-notifications, or null where it cannot run. Loaded on first use. */
 function notifications(): typeof NotificationsModule | null {
   if (loaded !== undefined) return loaded;
@@ -43,14 +51,18 @@ function notifications(): typeof NotificationsModule | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod: typeof NotificationsModule = require('expo-notifications');
-    // A reminder that arrives while the app is open still shows as a banner.
+    // A reminder or push that arrives while the app is open still shows as a
+    // banner, unless it is a message in the chat already on screen.
     mod.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
+      handleNotification: async (n) => {
+        const reading = openChat !== null && n.request.content.data?.url === `/chat/${openChat}`;
+        return {
+          shouldShowBanner: !reading,
+          shouldShowList: !reading,
+          shouldPlaySound: !reading,
+          shouldSetBadge: false,
+        };
+      },
     });
     loaded = mod;
   } catch {
@@ -153,11 +165,15 @@ export async function syncReminders(role: Role, askPermission = true): Promise<S
   }
 }
 
-/** Where a tapped reminder should open, if it is one of ours. */
+/**
+ * Where a tapped reminder or push should open, if it is one of ours. Pushes
+ * from the database carry data.push (supabase/migrations/20261019200000_ride_and_chat_push.sql).
+ */
 function reminderUrl(response: NotificationsModule.NotificationResponse | null): string | null {
   if (!response) return null;
-  if (!response.notification.request.identifier.startsWith(PREFIX)) return null;
-  const url = response.notification.request.content.data?.url;
+  const { identifier, content } = response.notification.request;
+  if (!identifier.startsWith(PREFIX) && content.data?.push !== true) return null;
+  const url = content.data?.url;
   return typeof url === 'string' ? url : null;
 }
 

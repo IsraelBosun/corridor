@@ -39,7 +39,7 @@ export async function registerForPush(N: typeof NotificationsModule | null): Pro
       // High, so it sounds and drops down over whatever is open.
       await N.setNotificationChannelAsync(CHANNEL, {
         name: 'Your rides',
-        description: 'When someone takes a seat on your ride.',
+        description: 'Seats taken, ride changes and new messages.',
         importance: N.AndroidImportance.HIGH,
         sound: 'default',
       });

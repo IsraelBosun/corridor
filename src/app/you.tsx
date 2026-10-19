@@ -613,7 +613,7 @@ function PayoutField() {
             <Text variant="small" tone="muted">
               {payout.bankName}
             </Text>
-            <Text variant="dataLarge" style={s.accountNumber}>
+            <Text variant="dataLarge" selectable style={s.accountNumber}>
               {payout.accountNumber}
             </Text>
             <Text variant="body" style={s.strong}>
