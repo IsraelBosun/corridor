@@ -14,9 +14,9 @@ export const WORK_DOMAIN = process.env.EXPO_PUBLIC_WORK_DOMAIN ?? 'example.com';
  * The database only accepts this figure (trips_contribution_flat), so change
  * both together.
  */
-export const CONTRIBUTION_NAIRA = 700;
+export const CONTRIBUTION_NAIRA = 1000;
 
-/** "₦700". */
+/** "₦1,000". */
 export function naira(amount: number): string {
   return `₦${amount.toLocaleString('en-NG')}`;
 }
