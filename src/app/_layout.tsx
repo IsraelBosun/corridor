@@ -22,6 +22,7 @@ import { backendReady } from '@/data/backend';
 import { justSwitchedTheme, ThemeProvider } from '@/theme/theme';
 import { color, space, themed } from '@/theme/tokens';
 import { AuthLink } from '@/lib/auth-link';
+import { RideTracker } from '@/lib/tracking';
 import { OtaUpdates } from '@/lib/updates';
 import { DialogHost } from '@/ui/dialog';
 import { StatusBand } from '@/ui/status-band';
@@ -161,6 +162,7 @@ function Gate({ scheme }: { scheme: string }) {
 
   return (
     <StoreProvider>
+      {introduced ? <RideTracker /> : null}
       {/*
         Keyed by scheme: switching light and dark rebuilds every screen from
         the new palette. The store above keeps its data, so nothing reloads.
@@ -202,6 +204,7 @@ function Gate({ scheme }: { scheme: string }) {
           <Stack.Screen name="chat/[id]" />
           <Stack.Screen name="report/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+          <Stack.Screen name="activity" />
         </Stack.Protected>
       </Stack>
     </StoreProvider>

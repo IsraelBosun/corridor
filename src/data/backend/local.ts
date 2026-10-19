@@ -626,6 +626,17 @@ export const localBackend: Backend = {
   // Nobody reads reports on a test phone, so they go nowhere. The screen
   // still behaves as it does against the real backend.
   async reportPerson() {},
+
+  // Security records live in the hosted database only. Test data keeps none.
+  async logSession() {},
+
+  async listMyActivity() {
+    return [];
+  },
+
+  async recordTrack() {
+    return 0;
+  },
 };
 
 /* -------------------------------------------------------------------------- */

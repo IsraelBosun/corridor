@@ -10,6 +10,7 @@ import { color, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
 import { Avatar, Button, Callout, Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
+import { RecordingNotice } from '@/ui/recording-notice';
 import { Text } from '@/ui/text';
 import { DirectionsButton, TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
 
@@ -274,6 +275,8 @@ function OnTheirWay({ trip }: { trip: Trip }) {
       </View>
 
       <DirectionsButton trip={trip} drops={route} />
+
+      <RecordingNotice />
 
       {route.length > 0 ? (
         <>

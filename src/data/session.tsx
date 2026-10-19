@@ -1,8 +1,23 @@
+import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 
 import { backend, type AuthSession, type Membership, type ProfileRow } from './backend';
 import type { DropOff, Person, Role } from './types';
 import { forgetPush } from '@/lib/push';
+
+/** For the activity log: the app version and which update it is running. */
+function appVersion(): string {
+  const version = Constants.expoConfig?.version ?? '';
+  const update = Updates.updateId ? Updates.updateId.slice(0, 8) : 'built-in';
+  return `${version} (${update})`;
+}
+
+/** A sign in or out goes in the activity log. Never holds anything up. */
+function logSession(event: 'signed_in' | 'signed_out'): Promise<void> {
+  return backend.logSession(event, Platform.OS, appVersion()).catch(() => {});
+}
 
 /**
  * Who is signed in, and are they one of us.
@@ -172,6 +187,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (email: string, password: string): Promise<Result> => {
     try {
       await backend.signIn(email.trim().toLowerCase(), password);
+      logSession('signed_in');
       return { ok: true };
     } catch (e) {
       return { ok: false, error: message(e) };
@@ -200,6 +216,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     async (email: string, code: string, password: string): Promise<Result> => {
       try {
         await backend.resetPassword(email.trim().toLowerCase(), code.trim(), password);
+        // The reset code signs them in, so this is a sign in too.
+        logSession('signed_in');
         return { ok: true };
       } catch (e) {
         return { ok: false, error: message(e) };
@@ -299,6 +317,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    // While still signed in, so the database knows whose it is.
+    await logSession('signed_out');
     await forgetPush();
     await backend.signOut();
   }, []);

@@ -52,7 +52,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Corridor shows where you are on your own map. It is never stored or shared."
+          "locationWhenInUsePermission": "Corridor shows where you are on your own map. While a ride you are on is on the road, it also records your route for safety, kept for 90 days and seen only by you and the Corridor safety team."
         }
       ],
       [

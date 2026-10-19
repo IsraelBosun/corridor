@@ -191,6 +191,17 @@ export default function YouScreen() {
         </Pressable>
         <View style={s.groupLine} />
         <Pressable
+          onPress={() => router.push('/activity')}
+          accessibilityRole="button"
+          style={({ pressed }) => [s.groupRow, pressed && s.pressed]}>
+          <ShieldIcon size={22} tint={color.brandInk} />
+          <Text variant="body" style={[s.flex, s.strong]}>
+            Your activity
+          </Text>
+          <ChevronIcon />
+        </Pressable>
+        <View style={s.groupLine} />
+        <Pressable
           onPress={confirmSignOut}
           accessibilityRole="button"
           style={({ pressed }) => [s.groupRow, pressed && s.pressed]}>
@@ -214,8 +225,9 @@ export default function YouScreen() {
       <Text variant="small" tone="faint" style={s.foot}>
         A notice board between verified commuters, not a transport service. Drivers and vehicles are not
         vetted. Corridor never handles money: a fuel contribution, when a driver asks for one, goes
-        straight from rider to driver. We keep your name, your work address, one usual place, and a
-        private record of the rides you take, for safety. Never your live location.
+        straight from rider to driver. We keep your name, your work address, one usual place, a private
+        record of the rides you take and what you do in Corridor, and the route of each ride while it is on
+        the road, for safety. Routes are deleted after 90 days. Nobody else in Corridor sees any of it.
       </Text>
     </Screen>
   );

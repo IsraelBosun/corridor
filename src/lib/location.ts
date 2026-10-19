@@ -2,9 +2,10 @@
  * Where this phone is, for the "you are here" dot.
  *
  * Shown on this person's own map and nowhere else. The position lives in
- * memory while a map is on screen: it is never stored, never sent to the
- * backend and never shown to anyone else, which keeps the promise on the
- * Account page that nothing is kept about where people have been.
+ * memory while a map is on screen: this watch never stores it, never sends it
+ * to the backend and never shows it to anyone else. The one thing that does
+ * keep positions is the ride track (tracking.ts), and only while a ride this
+ * person is on is on the road.
  *
  * One watch is shared by every map on screen. It starts with the first map
  * and stops when the last one goes, so the GPS is not left running.

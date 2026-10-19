@@ -19,6 +19,7 @@ import { AlertIcon, ChatIcon, ChevronIcon, PinIcon, PlusIcon } from '@/ui/icons'
 import { Avatar, Button, SectionTitle } from '@/ui/primitives';
 import { BottomSheet } from '@/ui/sheet';
 import { Text } from '@/ui/text';
+import { RecordingNotice } from '@/ui/recording-notice';
 import { DirectionsButton, RidesMap, TripMap, useRiderDrops } from '@/ui/trip-map';
 import { TripRow } from '@/ui/trip-row';
 
@@ -462,6 +463,7 @@ function MyRide({ trip, now }: { trip: Trip; now: number }) {
           kind="secondary"
           onPress={() => router.push({ pathname: '/chat/[id]', params: { id: trip.id } })}
         />
+        <RecordingNotice />
       </View>
     );
   }

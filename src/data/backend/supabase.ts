@@ -1,7 +1,7 @@
 import * as Linking from 'expo-linking';
 
 import { supabase } from '@/lib/supabase';
-import type { AuthSession, Backend, Membership, MessageRow, PayoutRow, ProfileRow, TripRow } from './types';
+import type { ActivityRow, AuthSession, Backend, Membership, MessageRow, PayoutRow, ProfileRow, TripRow } from './types';
 
 /**
  * The hosted backend. The rules live in the database (RLS, triggers and the
@@ -304,5 +304,31 @@ export const supabaseBackend: Backend = {
       p_details: details,
     });
     fail(error);
+  },
+
+  async logSession(event, platform, appVersion) {
+    const { error } = await supabase.rpc('log_session', {
+      p_event: event,
+      p_platform: platform,
+      p_app_version: appVersion,
+    });
+    fail(error);
+  },
+
+  async listMyActivity(limit) {
+    // RLS returns only the caller's own rows.
+    const { data, error } = await supabase
+      .from('activity_log')
+      .select('id, at, action, trip_id, detail')
+      .order('at', { ascending: false })
+      .limit(limit);
+    fail(error);
+    return (data ?? []) as ActivityRow[];
+  },
+
+  async recordTrack(tripId, points) {
+    const { data, error } = await supabase.rpc('record_track', { p_trip: tripId, p_points: points });
+    fail(error);
+    return typeof data === 'number' ? data : 0;
   },
 };

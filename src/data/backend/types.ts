@@ -107,6 +107,27 @@ export type PayoutRow = {
   account_name: string;
 };
 
+/** One line of someone's own activity, as the database wrote it. */
+export type ActivityRow = {
+  id: number;
+  at: string;
+  action: string;
+  trip_id: string | null;
+  detail: Record<string, unknown>;
+};
+
+/** A position on a ride, from this phone. */
+export type TrackPoint = {
+  lat: number;
+  lng: number;
+  /** Metres. */
+  acc: number | null;
+  /** Metres a second. */
+  speed: number | null;
+  /** ISO time the phone took the reading. */
+  at: string;
+};
+
 export interface Backend {
   /** 'local' shows the test account tools; 'supabase' is the real thing. */
   kind: 'local' | 'supabase';
@@ -190,6 +211,17 @@ export interface Backend {
    * nobody on the ride is told.
    */
   reportPerson(tripId: string, reportedId: string | null, category: ReportCategory, details: string): Promise<void>;
+
+  // Security records
+  /** A Corridor sign in or sign out, for the activity log. The database adds the rest. */
+  logSession(event: 'signed_in' | 'signed_out', platform: string, appVersion: string): Promise<void>;
+  /** The signed in person's own activity, newest first. */
+  listMyActivity(limit: number): Promise<ActivityRow[]>;
+  /**
+   * Positions from this phone during a ride on the road. Returns how many the
+   * database kept: none once the ride is no longer on the road.
+   */
+  recordTrack(tripId: string, points: TrackPoint[]): Promise<number>;
 }
 
 export type ReportCategory =
