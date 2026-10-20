@@ -15,5 +15,12 @@
       "autoIncrement": true,
       "channel": "production"
     }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6823738923"
+      }
+    }
   }
 }
