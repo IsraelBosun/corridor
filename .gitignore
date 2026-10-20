@@ -43,3 +43,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Claude Code notes kept on this machine only (holds the demo login)
+CLAUDE.local.md
