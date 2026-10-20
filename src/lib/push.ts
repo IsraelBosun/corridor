@@ -5,9 +5,10 @@
  * database does the sending (supabase/migrations/20261017140000_seat_push.sql):
  * a driver hears it, with sound, when someone takes a seat on their ride.
  *
- * iOS needs the APNs key set up in EAS, and Android needs Firebase set up in
- * a native build. Until then getting a token fails and nothing is saved; the
- * app carries on without pushes.
+ * iOS needs the APNs key set up in EAS. Android needs google-services.json
+ * (Firebase project corridor-2de2e) built into the app, plus the FCM V1
+ * service account key uploaded to EAS credentials. Builds made before that
+ * get no token; the app carries on without pushes.
  */
 import Constants from 'expo-constants';
 import type * as NotificationsModule from 'expo-notifications';

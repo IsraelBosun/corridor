@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "52210945925",
+    "project_id": "corridor-2de2e",
+    "storage_bucket": "corridor-2de2e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:52210945925:android:8d54942bca8dee4f35feec",
+        "android_client_info": {
+          "package_name": "com.bluehydra.corridor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_-U7HYb98D_imnowKKEO46IgUnkrzXDU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
