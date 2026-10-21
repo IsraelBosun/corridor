@@ -1,9 +1,10 @@
 /**
- * The 15:00 reminder, Monday to Friday.
+ * The 06:00 and 15:00 reminders, Monday to Friday.
  *
- * Drivers are nudged to post tonight's ride; riders to set where they get off
- * and watch for one. Rides start appearing from about 16:00, so 15:00 lands
- * before anyone has packed up.
+ * At 06:00 drivers are nudged to post their ride to work, and riders to look
+ * for one; rides to work leave from 05:30 to 10:00 and are posted the same
+ * morning. At 15:00 the same for the ride home: rides start appearing from
+ * about 16:00, so 15:00 lands before anyone has packed up.
  *
  * These are local notifications, scheduled on the phone itself. Nothing goes
  * through a server, they arrive with no signal, and turning them off in
@@ -25,8 +26,8 @@ import { registerForPush } from '@/lib/push';
 
 const KEY = 'corridor.reminders';
 const CHANNEL = 'reminders';
+/** Every one of ours starts with this, morning ones included, so one sweep cancels them all. */
 const PREFIX = 'corridor-3pm-';
-const HOUR = 15;
 /** Monday to Friday, in the trigger's numbering where 1 is Sunday. */
 const WEEKDAYS = [2, 3, 4, 5, 6];
 
@@ -71,18 +72,43 @@ function notifications(): typeof NotificationsModule | null {
   return loaded;
 }
 
-const COPY: Record<Role, { title: string; body: string; url: string }> = {
-  driver: {
-    title: 'Driving home tonight?',
-    body: 'Post your ride so people heading your way can grab a seat.',
-    url: '/post',
+type Copy = { title: string; body: string; url: string };
+
+/** When each reminder goes, and what it says to each side. */
+const SLOTS: { id: string; hour: number; copy: Record<Role, Copy> }[] = [
+  {
+    id: 'am-',
+    hour: 6,
+    copy: {
+      driver: {
+        title: 'Driving to work this morning?',
+        body: 'Post your ride so people along your road can grab a seat.',
+        url: '/post?direction=work',
+      },
+      passenger: {
+        title: 'Heading to work?',
+        body: 'Rides to work are being posted. Look for one that passes near you.',
+        url: '/',
+      },
+    },
   },
-  passenger: {
-    title: 'Heading home tonight?',
-    body: 'Rides start appearing from about 16:00. Set where you get off and watch for one going your way.',
-    url: '/',
+  {
+    id: '',
+    hour: 15,
+    copy: {
+      driver: {
+        title: 'Driving home tonight?',
+        body: 'Post your ride so people heading your way can grab a seat.',
+        url: '/post?direction=home',
+      },
+      passenger: {
+        title: 'Heading home tonight?',
+        body: 'Rides start appearing from about 16:00. Set where you get off and watch for one going your way.',
+        url: '/',
+      },
+    },
   },
-};
+];
 
 /** On unless turned off in Account. */
 export async function remindersOn(): Promise<boolean> {
@@ -136,26 +162,28 @@ export async function syncReminders(role: Role, askPermission = true): Promise<S
     if (Platform.OS === 'android') {
       await N.setNotificationChannelAsync(CHANNEL, {
         name: 'Ride reminders',
-        description: 'A nudge at 15:00 on weekdays to post or look for a ride home.',
+        description: 'A nudge at 06:00 and 15:00 on weekdays to post or look for a ride.',
         importance: N.AndroidImportance.DEFAULT,
       });
     }
 
     await cancelOurs(N);
-    const copy = COPY[role];
     await Promise.all(
-      WEEKDAYS.map((weekday) =>
-        N.scheduleNotificationAsync({
-          identifier: `${PREFIX}${weekday}`,
-          // iOS stays silent unless a sound is asked for. Android takes it from the channel.
-          content: { title: copy.title, body: copy.body, sound: 'default', data: { url: copy.url } },
-          trigger: {
-            type: N.SchedulableTriggerInputTypes.WEEKLY,
-            channelId: CHANNEL,
-            weekday,
-            hour: HOUR,
-            minute: 0,
-          },
+      SLOTS.flatMap((slot) =>
+        WEEKDAYS.map((weekday) => {
+          const copy = slot.copy[role];
+          return N.scheduleNotificationAsync({
+            identifier: `${PREFIX}${slot.id}${weekday}`,
+            // iOS stays silent unless a sound is asked for. Android takes it from the channel.
+            content: { title: copy.title, body: copy.body, sound: 'default', data: { url: copy.url } },
+            trigger: {
+              type: N.SchedulableTriggerInputTypes.WEEKLY,
+              channelId: CHANNEL,
+              weekday,
+              hour: slot.hour,
+              minute: 0,
+            },
+          });
         })
       )
     );

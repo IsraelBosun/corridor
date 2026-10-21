@@ -5,7 +5,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { usePayout } from '@/data/payout';
 import { useSession } from '@/data/session';
-import { bookable, endName, seatsOpen, startName, useStore, useTrip } from '@/data/store';
+import { bookable, directionWords, endName, seatsOpen, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { useMyLocation } from '@/lib/location';
@@ -15,6 +15,7 @@ import { color, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, BackIcon, CarIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
 import { Avatar, Button, Callout, Row, RoundButton, Screen, ScreenHeader } from '@/ui/primitives';
+import { CarLine, LiveNotice, useLiveView } from '@/ui/live';
 import { Text } from '@/ui/text';
 import { TripMap } from '@/ui/trip-map';
 import { TripRow } from '@/ui/trip-row';
@@ -52,6 +53,8 @@ export default function TripScreen() {
     holding && Boolean(trip?.contributionNaira) && trip?.status !== 'cancelled',
     trip?.riders.join(',')
   );
+  // The car, live, for a rider holding a seat. Nobody else is told where it is.
+  const live = useLiveView(holding ? trip : undefined);
 
   if (!trip) {
     return (
@@ -86,6 +89,7 @@ export default function TripScreen() {
   // time, while this is open stops offering a seat.
   const canBook = bookable(trip);
   const isDriver = me ? trip.driverId === me.id : false;
+  const work = trip.direction === 'work';
 
   async function onReserve() {
     setBusy(true);
@@ -141,6 +145,7 @@ export default function TripScreen() {
           origin={trip.origin}
           destination={trip.destination}
           dropOff={dropOff}
+          live={live.markers}
           padding={{ top: insets.top + 56, bottom: 56, left: 40, right: 40 }}
         />
         <RoundButton
@@ -164,10 +169,12 @@ export default function TripScreen() {
             <>
               <Text variant="title">{untilHeading(trip.departMin, now)}</Text>
               <Text variant="body" tone="muted" style={s.sub}>
-                Leaves {hhmm(trip.departMin)}, give or take {trip.toleranceMin} min
+                {work ? 'To work. ' : ''}Leaves {hhmm(trip.departMin)}, give or take {trip.toleranceMin} min
               </Text>
             </>
           )}
+
+          {mine ? <CarLine trip={trip} car={live.car} /> : null}
 
           {refusal ? (
             <Callout tone="stop" icon={<AlertIcon />}>
@@ -182,8 +189,14 @@ export default function TripScreen() {
 
           {/* The route, as a ride hailing app shows it: from, via, to. */}
           <View style={s.route}>
-            <RouteStop kind="start" title={start} note="Pickup" />
-            {passes ? <RouteStop kind="mine" title={dropOffName} note="Where you get off, on the way" /> : null}
+            <RouteStop kind="start" title={start} note={work ? 'Where the driver sets off' : 'Pickup'} />
+            {passes ? (
+              <RouteStop
+                kind="mine"
+                title={dropOffName}
+                note={work ? 'Where you are picked up, on the way' : 'Where you get off, on the way'}
+              />
+            ) : null}
             <RouteStop
               kind="end"
               title={endName(trip)}
@@ -297,11 +310,17 @@ export default function TripScreen() {
               arrow
               onPress={() => router.replace({ pathname: '/pickup/[id]', params: { id: trip.id } })}
             />
+          ) : mine && trip.status === 'left' && work && !present ? (
+            // A morning driver on the way to collect this rider.
+            <>
+              <Button label="I am in the car" kind="go" onPress={() => me && markPresent(trip.id, me.id)} />
+              <LiveNotice trip={trip} />
+            </>
           ) : mine && trip.status === 'left' ? (
             // On the road: no checking in or giving the seat up now, only
             // saying the ride is over.
             <Button
-              label="I have been dropped off"
+              label={work ? 'I have arrived' : 'I have been dropped off'}
               kind="go"
               onPress={() => {
                 finishRide(trip.id);
@@ -310,7 +329,12 @@ export default function TripScreen() {
             />
           ) : mine ? (
             <>
-              {present ? (
+              <LiveNotice trip={trip} />
+              {work ? (
+                <Text variant="small" tone="muted" center>
+                  {driver.name.split(' ')[0]} picks you up on the way, near {dropOffName}.
+                </Text>
+              ) : present ? (
                 <View style={s.checked}>
                   <CheckIcon />
                   <Text variant="body" tone="go" style={s.bold}>
@@ -407,8 +431,10 @@ function CancelledTrip({ trip }: { trip: Trip }) {
   const { trips, serves, person, dropOff } = useStore();
   const now = useNow();
   const here = useMyLocation();
-  // Same rule as the home list: a pickup you can walk to, on a road past your stop.
+  // Same rule as the home list: a pickup you can walk to, on a road past your
+  // stop. To work there is no walk: the car comes past.
   const near = (t: Trip) => {
+    if (t.direction === 'work') return true;
     const m = pickupMetres(t, here);
     return m === undefined || m <= NEAR_PICKUP_M;
   };
@@ -417,6 +443,7 @@ function CancelledTrip({ trip }: { trip: Trip }) {
     .filter(
       (t) =>
         t.id !== trip.id &&
+        t.direction === trip.direction &&
         bookable(t) &&
         seatsOpen(t) > 0 &&
         (!dropOff || serves(t)) &&
@@ -445,7 +472,7 @@ function CancelledTrip({ trip }: { trip: Trip }) {
       </Callout>
 
       <Text variant="title" style={s.recoverTitle}>
-        You still need a way home.
+        You still need a way {directionWords(trip.direction)}.
       </Text>
       <Text variant="body" tone="muted" style={s.sub}>
         {alternatives.length === 0

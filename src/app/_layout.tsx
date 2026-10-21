@@ -22,6 +22,7 @@ import { backendReady } from '@/data/backend';
 import { justSwitchedTheme, ThemeProvider } from '@/theme/theme';
 import { color, space, themed } from '@/theme/tokens';
 import { AuthLink } from '@/lib/auth-link';
+import { LiveSharer } from '@/lib/live';
 import { RideTracker } from '@/lib/tracking';
 import { OtaUpdates } from '@/lib/updates';
 import { DialogHost } from '@/ui/dialog';
@@ -163,6 +164,7 @@ function Gate({ scheme }: { scheme: string }) {
   return (
     <StoreProvider>
       {introduced ? <RideTracker /> : null}
+      {introduced ? <LiveSharer /> : null}
       {/*
         Keyed by scheme: switching light and dark rebuilds every screen from
         the new palette. The store above keeps its data, so nothing reloads.

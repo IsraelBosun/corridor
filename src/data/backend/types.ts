@@ -1,4 +1,4 @@
-import type { Role, TripStatus } from '../types';
+import type { Direction, Role, TripStatus } from '../types';
 
 /**
  * Everything the app asks of a backend, in one place.
@@ -48,6 +48,7 @@ export type TripRow = {
   id: string;
   code: string;
   driver_id: string;
+  direction: Direction;
   depart_at: string;
   tolerance_min: number;
   seats_total: number;
@@ -64,6 +65,8 @@ export type TripRow = {
   origin_lng: number | null;
   /** Naira each rider pays the driver directly, or null for a free ride. */
   contribution_naira: number | null;
+  /** The regular ride this was posted from, if any. */
+  plan_id: string | null;
   reservations: { rider_id: string; present_at: string | null }[];
 };
 
@@ -75,6 +78,8 @@ export type MessageRow = {
 };
 
 export type TripFields = {
+  /** Fixed once posted. The database refuses a change. */
+  direction: Direction;
   depart_at: string;
   tolerance_min: number;
   seats_total: number;
@@ -94,6 +99,34 @@ export type TripFields = {
 };
 
 export type ProfilePatch = Partial<Omit<ProfileRow, 'id'>>;
+
+/**
+ * A regular ride: a ride's details and the weekdays it runs. Each of those
+ * days the database posts that day's ride from it.
+ */
+export type PlanRow = {
+  id: string;
+  direction: Direction;
+  /** ISO weekdays: 1 is Monday, 7 is Sunday. */
+  weekdays: number[];
+  /** "07:30:00", Lagos time. */
+  depart_time: string;
+  tolerance_min: number;
+  seats_total: number;
+  vehicle: string | null;
+  note: string | null;
+  origin_name: string;
+  origin_lat: number;
+  origin_lng: number;
+  destination_name: string | null;
+  destination_lat: number | null;
+  destination_lng: number | null;
+  contribution_naira: number | null;
+  announce_on_depart: boolean;
+  active: boolean;
+};
+
+export type PlanFields = Omit<PlanRow, 'id' | 'active'>;
 
 /**
  * Where a driver takes fuel contributions by transfer. Set once on their
@@ -125,6 +158,16 @@ export type TrackPoint = {
   /** Metres a second. */
   speed: number | null;
   /** ISO time the phone took the reading. */
+  at: string;
+};
+
+/** Someone else on the ride, where they last were. */
+export type LivePositionRow = {
+  user_id: string;
+  lat: number;
+  lng: number;
+  accuracy_m: number | null;
+  /** ISO time the database got it. */
   at: string;
 };
 
@@ -184,8 +227,23 @@ export interface Backend {
   onTripsChange(cb: () => void): () => void;
 
   // Driving
-  /** Returns the new trip id. */
-  createTrip(driverId: string, fields: TripFields): Promise<string>;
+  /** Returns the new trip id. With a plan, it is that plan's ride for today. */
+  createTrip(driverId: string, fields: TripFields, plan?: { id: string; day: string }): Promise<string>;
+
+  // Regular rides
+  /** The signed in driver's own. */
+  listPlans(): Promise<PlanRow[]>;
+  /** Returns the new plan id. */
+  createPlan(driverId: string, fields: PlanFields): Promise<string>;
+  setPlanActive(planId: string, active: boolean): Promise<void>;
+  deletePlan(planId: string): Promise<void>;
+  /** Posts today's rides from every plan that has not yet. Anyone may ask. */
+  postPlannedRides(): Promise<void>;
+
+  // Notification choices
+  /** Whether to be told when a ride passing near your place is posted. On unless turned off. */
+  getAreaRides(): Promise<boolean>;
+  setAreaRides(on: boolean): Promise<void>;
   /** Replaces the fields of the driver's own trip. */
   editTrip(tripId: string, fields: TripFields): Promise<void>;
   cancelTrip(tripId: string): Promise<void>;
@@ -222,6 +280,18 @@ export interface Backend {
    * database kept: none once the ride is no longer on the road.
    */
   recordTrack(tripId: string, points: TrackPoint[]): Promise<number>;
+
+  // Live location around the pickup
+  /**
+   * This phone's latest position, for the people on its ride. False once
+   * there is nobody to show it to: outside the ride's live window, or a rider
+   * already in the car.
+   */
+  sharePosition(tripId: string, lat: number, lng: number, accuracy: number | null): Promise<boolean>;
+  /** Takes this phone's position off the ride now. */
+  stopSharing(tripId: string): Promise<void>;
+  /** What the signed in person may see: the driver sees waiting riders, a rider sees the driver. */
+  ridePositions(tripId: string): Promise<LivePositionRow[]>;
 }
 
 export type ReportCategory =

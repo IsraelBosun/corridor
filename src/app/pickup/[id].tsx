@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
-import { endName, startName, useStore, useTrip } from '@/data/store';
+import { directionWords, endName, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { hhmm, untilText, useNow } from '@/lib/time';
@@ -10,6 +10,7 @@ import { color, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
 import { Avatar, Button, Callout, Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
+import { LiveNotice, riderLiveText, useLiveView } from '@/ui/live';
 import { RecordingNotice } from '@/ui/recording-notice';
 import { Text } from '@/ui/text';
 import { DirectionsButton, TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
@@ -22,6 +23,7 @@ export default function PickupScreen() {
   const now = useNow();
   const { height } = useWindowDimensions();
   const drops = useRiderDrops(trip, trip?.riders ?? []);
+  const live = useLiveView(trip);
   // Start and cancel each send one request. A second tap while it is out
   // would send another and show an error for a ride that already went.
   const [busy, setBusy] = useState(false);
@@ -36,6 +38,7 @@ export default function PickupScreen() {
   }
 
   if (trip.status === 'left') return <OnTheirWay trip={trip} />;
+  const work = trip.direction === 'work';
 
   // Cancelled somewhere else (Edit ride, or another phone) while this was open.
   if (trip.status === 'cancelled') {
@@ -46,7 +49,7 @@ export default function PickupScreen() {
         <Text variant="body" tone="muted" style={s.sub}>
           {trip.riders.length === 0
             ? 'It is off the map.'
-            : 'Everyone with a seat has been told, so they can find another way home.'}
+            : `Everyone with a seat has been told, so they can find another way ${directionWords(trip.direction)}.`}
         </Text>
       </Screen>
     );
@@ -61,7 +64,8 @@ export default function PickupScreen() {
   const here = trip.riders.filter((r) => trip.presentAt[r]);
   const waiting = trip.riders.filter((r) => !trip.presentAt[r]);
   const allHere = waiting.length === 0 && here.length > 0;
-  const overdue = now >= trip.departMin && waiting.length > 0;
+  // To work, nobody is waiting at the start: they are collected on the way.
+  const overdue = !work && now >= trip.departMin && waiting.length > 0;
   const firstName = (pid: string) => person(pid).name.split(' ')[0];
 
   // Setting off with someone still on their way leaves them behind, and it
@@ -81,7 +85,7 @@ export default function PickupScreen() {
       );
       return;
     }
-    if (waiting.length === 0) {
+    if (waiting.length === 0 || work) {
       go();
       return;
     }
@@ -100,10 +104,10 @@ export default function PickupScreen() {
     if (busy) return;
     const n = trip!.riders.length;
     showDialog(
-      "Cancel tonight's ride?",
+      `Cancel your ride ${directionWords(trip!.direction)}?`,
       n === 0
         ? 'It comes off the map straight away.'
-        : `${n === 1 ? 'The rider with a seat is' : `All ${n} riders with a seat are`} told at once, so they can find another way home.`,
+        : `${n === 1 ? 'The rider with a seat is' : `All ${n} riders with a seat are`} told at once, so they can find another way ${directionWords(trip!.direction)}.`,
       [
         { text: 'Keep the ride', style: 'cancel' },
         {
@@ -123,9 +127,11 @@ export default function PickupScreen() {
   const headline =
     trip.riders.length === 0
       ? 'No one has booked yet'
-      : allHere
-        ? 'Everyone is here'
-        : `${here.length} of ${trip.riders.length} here`;
+      : work
+        ? `${trip.riders.length} to pick up on the way`
+        : allHere
+          ? 'Everyone is here'
+          : `${here.length} of ${trip.riders.length} here`;
 
   return (
     <Screen
@@ -137,7 +143,9 @@ export default function PickupScreen() {
                 ? waiting.length === 1
                   ? `Leave without ${firstName(waiting[0])}`
                   : `Leave without ${waiting.length} riders`
-                : 'Start trip'
+                : work && trip.riders.length > 0
+                  ? 'Set off to pick them up'
+                  : 'Start trip'
             }
             kind={overdue ? 'primary' : 'go'}
             onPress={start}
@@ -150,19 +158,23 @@ export default function PickupScreen() {
 
       <Text variant="title">{headline}</Text>
       <Text variant="body" tone="muted" style={s.sub}>
-        At {startName(trip)}. Leaving {hhmm(trip.departMin)}, {untilText(trip.departMin, now)}
+        {work ? 'From' : 'At'} {startName(trip)}. Leaving {hhmm(trip.departMin)}, {untilText(trip.departMin, now)}
+        {work && trip.riders.length > 0 ? '. Each rider waits near their pickup on your road' : ''}
         {trip.contributionNaira ? `. Each rider pays you ${naira(trip.contributionNaira)} as they get in.` : ''}
       </Text>
 
-      {/* Where everyone gets off, before anyone gets in. */}
+      {/* Where everyone gets off (or, to work, is picked up), before anyone gets in. */}
       <View style={[s.map, { height: Math.round(height * 0.34) }]}>
         <TripMap
           origin={trip.origin}
           destination={trip.destination}
           riderDrops={drops}
+          live={live.markers}
           padding={{ top: 40, bottom: 30, left: 30, right: 30 }}
         />
       </View>
+
+      <LiveNotice trip={trip} />
 
       {overdue ? (
         <Callout tone="stop" icon={<AlertIcon />}>
@@ -180,6 +192,7 @@ export default function PickupScreen() {
           {trip.riders.map((riderId, i) => {
             const p = person(riderId);
             const at = trip.presentAt[riderId];
+            const where = at ? undefined : riderLiveText(trip, p.dropOff, live.riders[riderId]);
             return (
               <Pressable
                 key={riderId}
@@ -197,9 +210,16 @@ export default function PickupScreen() {
                     {p.name}
                   </Text>
                   <Text variant="small" tone={at ? 'go' : 'muted'} numberOfLines={1}>
-                    {at ? `Here since ${hhmm(at)}` : 'Not here yet'}
-                    {dropFor(drops, riderId) ? `, gets off at ${dropFor(drops, riderId)}` : ''}
+                    {at ? `${work ? 'In the car' : 'Here'} since ${hhmm(at)}` : work ? 'Not picked up yet' : 'Not here yet'}
+                    {dropFor(drops, riderId)
+                      ? `, ${work ? 'picked up near' : 'gets off at'} ${dropFor(drops, riderId)}`
+                      : ''}
                   </Text>
+                  {where ? (
+                    <Text variant="small" tone="brand" numberOfLines={1}>
+                      {where}
+                    </Text>
+                  ) : null}
                 </View>
                 <View style={[s.check, at ? s.checkOn : null]}>{at ? <CheckIcon tint={color.onInk} /> : null}</View>
               </Pressable>
@@ -233,6 +253,11 @@ export default function PickupScreen() {
  * in what order. The map shows the road, the list gives the order.
  */
 function OnTheirWay({ trip }: { trip: Trip }) {
+  if (trip.direction === 'work') return <PickingUp trip={trip} />;
+  return <DroppingOff trip={trip} />;
+}
+
+function DroppingOff({ trip }: { trip: Trip }) {
   const router = useRouter();
   const { height } = useWindowDimensions();
   const { finishRide } = useStore();
@@ -296,6 +321,112 @@ function OnTheirWay({ trip }: { trip: Trip }) {
               last={i === route.length - 1}
             />
           ))}
+        </>
+      ) : null}
+    </Screen>
+  );
+}
+
+/**
+ * A morning ride on the road: the pickups still to make, in the order the
+ * road reaches them, each ticked off as the rider gets in, then work.
+ */
+function PickingUp({ trip }: { trip: Trip }) {
+  const router = useRouter();
+  const { height } = useWindowDimensions();
+  const { finishRide, person, markPresent, markAbsent } = useStore();
+  const live = useLiveView(trip);
+
+  // Everyone booked, in pickup order. The ones still to collect are the stops.
+  const order = useRiderDrops(trip, trip.riders);
+  const toCollect = order.filter((r) => !trip.presentAt[r.id]);
+  const aboard = trip.riders.length - toCollect.length;
+
+  return (
+    <Screen
+      footer={
+        <Button
+          label={toCollect.length === 0 ? `Everyone is at ${endName(trip)}` : 'End the ride'}
+          kind={toCollect.length === 0 ? 'primary' : 'secondary'}
+          onPress={() => {
+            finishRide(trip.id);
+            router.replace('/');
+          }}
+        />
+      }>
+      <ScreenHeader title="Picking up" />
+
+      <Text variant="title">
+        {trip.riders.length === 0
+          ? 'Driving alone this morning'
+          : toCollect.length === 0
+            ? `Everyone is in, ${aboard} on board`
+            : `${toCollect.length} still to pick up`}
+      </Text>
+      <Text variant="body" tone="muted" style={s.sub}>
+        {trip.riders.length === 0
+          ? `Nobody is riding with you, so head straight for ${endName(trip)}. Have a good drive.`
+          : toCollect.length === 0
+            ? `Next stop, ${endName(trip)}. Have a good drive.`
+            : 'Tap each rider as they get in. Then on to work.'}
+      </Text>
+
+      <View style={[s.map, { height: Math.round(height * 0.42) }]}>
+        <TripMap
+          origin={trip.origin}
+          destination={trip.destination}
+          riderDrops={toCollect}
+          live={live.markers}
+          padding={{ top: 44, bottom: 36, left: 36, right: 36 }}
+        />
+      </View>
+
+      <DirectionsButton trip={trip} drops={toCollect} />
+      <LiveNotice trip={trip} />
+      <RecordingNotice />
+
+      {order.length > 0 ? (
+        <>
+          <SectionTitle>Pickups, in order</SectionTitle>
+          {order.map((r, i) => {
+            const at = trip.presentAt[r.id];
+            const where = at ? undefined : riderLiveText(trip, person(r.id).dropOff, live.riders[r.id]);
+            return (
+              <Pressable
+                key={r.id}
+                onPress={() => (at ? markAbsent(trip.id, r.id) : markPresent(trip.id, r.id))}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: !!at }}
+                style={({ pressed }) => [s.rider, i === order.length - 1 && s.riderLast, pressed && s.pressed]}>
+                <View style={s.num}>
+                  <Text variant="small" style={s.numText}>
+                    {r.num}
+                  </Text>
+                </View>
+                <View style={s.flex}>
+                  <Text variant="body" style={s.bold}>
+                    {r.name}
+                  </Text>
+                  <Text variant="small" tone={at ? 'go' : 'muted'} numberOfLines={1}>
+                    {at ? `In the car since ${hhmm(at)}` : (r.place ?? 'Has not said where')}
+                  </Text>
+                  {where ? (
+                    <Text variant="small" tone="brand" numberOfLines={1}>
+                      {where}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={[s.check, at ? s.checkOn : null]}>{at ? <CheckIcon tint={color.onInk} /> : null}</View>
+              </Pressable>
+            );
+          })}
+          <Row
+            icon={<ChatIcon />}
+            title="Message riders"
+            subtitle="One message to everyone on this ride"
+            onPress={() => router.push({ pathname: '/chat/[id]', params: { id: trip.id } })}
+            last
+          />
         </>
       ) : null}
     </Screen>

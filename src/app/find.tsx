@@ -32,7 +32,7 @@ export default function FindScreen() {
       intro={
         driver
           ? 'Where you usually head after work, anywhere in Lagos. It is filled in each time you offer a ride, and you can change it for any one ride.'
-          : 'Type where you get off, anywhere in Lagos: an estate, a bus stop, a mall or a street. You will see the rides whose road passes close to it.'
+          : 'Type an estate, a bus stop, a junction or a street near home, anywhere in Lagos. It is where you get off on the way home and where you are picked up on the way to work. You will see the rides whose road passes close to it.'
       }
       current={dropOff?.name}
       onBack={back}

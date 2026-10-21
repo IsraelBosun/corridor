@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS trips (
   id TEXT PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,
   driver_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  direction TEXT NOT NULL DEFAULT 'home',
   depart_at TEXT NOT NULL,
   tolerance_min INTEGER NOT NULL,
   seats_total INTEGER NOT NULL,
@@ -139,6 +140,7 @@ function db(): Promise<SQLite.SQLiteDatabase> {
         'trips ADD COLUMN origin_lat REAL',
         'trips ADD COLUMN origin_lng REAL',
         'trips ADD COLUMN contribution_naira INTEGER',
+        "trips ADD COLUMN direction TEXT NOT NULL DEFAULT 'home'",
         'profiles ADD COLUMN car TEXT',
       ]) {
         try {
@@ -438,7 +440,7 @@ export const localBackend: Backend = {
   async listTrips(since) {
     const d = await db();
     const trips = await d.getAllAsync<Omit<TripRow, 'reservations' | 'announce_on_depart'> & { announce_on_depart: number }>(
-      'SELECT id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira FROM trips WHERE depart_at > ? ORDER BY depart_at',
+      'SELECT id, code, driver_id, direction, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira, NULL AS plan_id FROM trips WHERE depart_at > ? ORDER BY depart_at',
       since
     );
     const res = await d.getAllAsync<{ trip_id: string; rider_id: string; present_at: string | null }>(
@@ -465,18 +467,24 @@ export const localBackend: Backend = {
     await needPayoutIfPaid(d, me, fields);
     const id = uuid();
     await d.withExclusiveTransactionAsync(async (tx) => {
-      // One live ride per driver, as the unique index does on the server.
+      // One live ride per driver each way, as the trigger does on the server.
       const live = await tx.getFirstAsync<{ n: number }>(
-        `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND ${liveWhere()}`,
-        me
+        `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND direction = ? AND ${liveWhere()}`,
+        me, fields.direction
       );
-      if ((live?.n ?? 0) > 0) throw new Error('You already have a ride posted tonight. Edit that one instead.');
+      if ((live?.n ?? 0) > 0) {
+        throw new Error(
+          fields.direction === 'work'
+            ? 'You already have a ride to work posted. Edit that one instead.'
+            : 'You already have a ride home posted. Edit that one instead.'
+        );
+      }
       await tx.runAsync(
-        `INSERT INTO trips (id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, announce_on_depart,
+        `INSERT INTO trips (id, code, driver_id, direction, depart_at, tolerance_min, seats_total, vehicle, note, announce_on_depart,
                             destination_name, destination_lat, destination_lng,
                             origin_name, origin_lat, origin_lng, contribution_naira, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        id, tripCode(), me, fields.depart_at, fields.tolerance_min, fields.seats_total,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, tripCode(), me, fields.direction, fields.depart_at, fields.tolerance_min, fields.seats_total,
         fields.vehicle, fields.note, fields.announce_on_depart ? 1 : 0,
         fields.destination_name, fields.destination_lat, fields.destination_lng,
         fields.origin_name, fields.origin_lat, fields.origin_lng, fields.contribution_naira, now()
@@ -528,9 +536,13 @@ export const localBackend: Backend = {
     const me = await requireUser();
     await ownTrip(tripId, me);
     const d = await db();
+    const trip = await d.getFirstAsync<{ direction: string }>('SELECT direction FROM trips WHERE id = ?', tripId);
     await d.withExclusiveTransactionAsync(async (tx) => {
-      // Presence is the record of who actually got in.
-      await tx.runAsync('DELETE FROM reservations WHERE trip_id = ? AND present_at IS NULL', tripId);
+      // Presence is the record of who actually got in. A morning ride picks
+      // its riders up on the way, so nobody is dropped for not being in yet.
+      if (trip?.direction !== 'work') {
+        await tx.runAsync('DELETE FROM reservations WHERE trip_id = ? AND present_at IS NULL', tripId);
+      }
       await tx.runAsync("UPDATE trips SET status = 'left' WHERE id = ?", tripId);
     });
     tripsChanged();
@@ -544,18 +556,24 @@ export const localBackend: Backend = {
     const d = await db();
     let ok = false;
     await d.withExclusiveTransactionAsync(async (tx) => {
-      const trip = await tx.getFirstAsync<{ seats_total: number; status: string; driver_id: string }>(
-        'SELECT seats_total, status, driver_id FROM trips WHERE id = ?',
+      const trip = await tx.getFirstAsync<{ seats_total: number; status: string; driver_id: string; direction: string }>(
+        'SELECT seats_total, status, driver_id, direction FROM trips WHERE id = ?',
         tripId
       );
       if (!trip || (trip.status !== 'posted' && trip.status !== 'boarding') || trip.driver_id === me) return;
-      // One seat at a time, across the whole corridor.
+      // One seat each way at a time, across the whole corridor.
       const elsewhere = await tx.getFirstAsync<{ n: number }>(
         `SELECT COUNT(*) AS n FROM reservations r JOIN trips t ON t.id = r.trip_id
-         WHERE r.rider_id = ? AND ${liveWhere('t.')} AND t.id <> ?`,
-        me, tripId
+         WHERE r.rider_id = ? AND t.direction = ? AND ${liveWhere('t.')} AND t.id <> ?`,
+        me, trip.direction, tripId
       );
-      if ((elsewhere?.n ?? 0) > 0) throw new Error('You already have a seat tonight. Give it up first.');
+      if ((elsewhere?.n ?? 0) > 0) {
+        throw new Error(
+          trip.direction === 'work'
+            ? 'You already have a seat to work. Give it up first.'
+            : 'You already have a seat home. Give it up first.'
+        );
+      }
       const taken = await tx.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM reservations WHERE trip_id = ?', tripId);
       if ((taken?.n ?? 0) >= trip.seats_total) return;
       await tx.runAsync(
@@ -637,6 +655,39 @@ export const localBackend: Backend = {
   async recordTrack() {
     return 0;
   },
+
+  // One phone, so there is nobody else to see. Test rides show no live dots.
+  async sharePosition() {
+    return false;
+  },
+
+  async stopSharing() {},
+
+  async ridePositions() {
+    return [];
+  },
+
+  // Regular rides are posted by the hosted database. Test data has none.
+  async listPlans() {
+    return [];
+  },
+
+  async createPlan() {
+    throw new Error('Regular rides need the hosted backend. Post this one as a single ride.');
+  },
+
+  async setPlanActive() {},
+
+  async deletePlan() {},
+
+  async postPlannedRides() {},
+
+  // Pushes come from the hosted database only.
+  async getAreaRides() {
+    return true;
+  },
+
+  async setAreaRides() {},
 };
 
 /* -------------------------------------------------------------------------- */

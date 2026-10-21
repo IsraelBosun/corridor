@@ -24,3 +24,7 @@ export function naira(amount: number): string {
 /** The window the evening actually spans, 16:00 to 23:00. Rides can leave anywhere in here. */
 export const EVENING_START_MIN = 16 * 60;
 export const EVENING_END_MIN = 23 * 60;
+
+/** The morning, 05:30 to 10:00. Rides to work leave in here, posted the same morning. */
+export const MORNING_START_MIN = 5 * 60 + 30;
+export const MORNING_END_MIN = 10 * 60;

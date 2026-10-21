@@ -8,15 +8,46 @@
  * iOS needs the APNs key set up in EAS. Android needs google-services.json
  * (Firebase project corridor-2de2e) built into the app, plus the FCM V1
  * service account key uploaded to EAS credentials. Builds made before that
- * get no token; the app carries on without pushes.
+ * get no token; the app carries on without pushes and asks the person to
+ * update from the Play Store.
  */
 import Constants from 'expo-constants';
 import type * as NotificationsModule from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 
 import { backend } from '@/data/backend';
+import { showDialog } from '@/ui/dialog';
 
 const CHANNEL = 'rides';
+
+const STORE = 'market://details?id=com.bluehydra.corridor';
+const STORE_WEB = 'https://play.google.com/store/apps/details?id=com.bluehydra.corridor';
+
+/**
+ * Android builds made before Firebase was added (version code 2 and older)
+ * fail to get any token, with "Default FirebaseApp is not initialized". Only
+ * a new build from the Play Store fixes that, so say so.
+ */
+function outdatedBuild(e: unknown): boolean {
+  return Platform.OS === 'android' && /firebase/i.test(e instanceof Error ? e.message : String(e));
+}
+
+function askToUpdate() {
+  showDialog(
+    'Update Corridor',
+    'This version cannot get ride notifications. Update from the Play Store to hear when someone takes your seat or messages you.',
+    [
+      { text: 'Later', style: 'cancel' },
+      {
+        text: 'Update',
+        onPress: () => {
+          Linking.openURL(STORE).catch(() => Linking.openURL(STORE_WEB).catch(() => {}));
+        },
+      },
+    ],
+    'alert'
+  );
+}
 
 /** The token saved this session, so signing out can take it back. */
 let saved: string | null = null;
@@ -34,7 +65,12 @@ export async function registerForPush(N: typeof NotificationsModule | null): Pro
     if (!granted && canAskAgain) {
       ({ granted } = await N.requestPermissionsAsync());
     }
-    if (!granted) return;
+    if (!granted) {
+      // The Android device token needs no permission, so this still finds an
+      // old build for someone who said no to notifications.
+      if (os === 'android') await N.getDevicePushTokenAsync();
+      return;
+    }
 
     if (os === 'android') {
       // High, so it sounds and drops down over whatever is open.
@@ -50,8 +86,9 @@ export async function registerForPush(N: typeof NotificationsModule | null): Pro
     const { data } = await N.getExpoPushTokenAsync({ projectId });
     await backend.savePushToken(data, os);
     saved = data;
-  } catch {
+  } catch (e) {
     // No pushes on this phone for now. Everything else works the same.
+    if (outdatedBuild(e)) askToUpdate();
   }
 }
 

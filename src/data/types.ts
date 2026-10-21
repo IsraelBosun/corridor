@@ -39,12 +39,22 @@ export type Destination = { name: string; lat: number; lng: number };
 
 export type TripStatus = 'posted' | 'boarding' | 'left' | 'cancelled';
 
+/**
+ * Which way a ride goes. 'work' is the morning: the driver sets off from home
+ * and picks each rider up near the place on their profile on the way in.
+ * 'home' is the evening: everyone meets at the start and is dropped along the
+ * way. The one place on a rider's profile is where they get off in the
+ * evening and where they get picked up in the morning.
+ */
+export type Direction = 'work' | 'home';
+
 export type Trip = {
   /** The database id. Used for routing and every query. */
   id: string;
   /** The four character code people read out loud. Shown, never queried. */
   code: string;
   driverId: string;
+  direction: Direction;
   /**
    * Where the ride starts, searched by the driver. Riders meet the car here.
    * Lives on tonight's trip only and goes with it.
@@ -79,6 +89,8 @@ export type Trip = {
    * undefined for a free ride. Corridor never handles it.
    */
   contributionNaira?: number;
+  /** Set when this was posted from a regular ride. Edits change this day only. */
+  planId?: string;
 };
 
 /**

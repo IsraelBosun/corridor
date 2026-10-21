@@ -36,9 +36,9 @@ const BAND = '#24493A';
 const SLIDES = [
   {
     key: 'ride',
-    lead: 'Seats home with people',
-    hi: 'going your way.',
-    body: 'Drivers heading your way post a ride after work. Grab a free seat and leave the office together.',
+    lead: 'Seats to work and home',
+    hi: 'with people going your way.',
+    body: 'Drivers heading your way post a ride to work in the morning and home after work. Grab a free seat and travel together.',
     Art: RouteArt,
   },
   {

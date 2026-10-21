@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
 import * as Updates from 'expo-updates';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
@@ -17,6 +18,35 @@ function appVersion(): string {
 /** A sign in or out goes in the activity log. Never holds anything up. */
 function logSession(event: 'signed_in' | 'signed_out'): Promise<void> {
   return backend.logSession(event, Platform.OS, appVersion()).catch(() => {});
+}
+
+/** Whose sign in this phone has already logged, so it is logged once per sign in. */
+const LOGGED_KEY = 'corridor.signin_logged';
+let logging: string | null = null;
+
+/**
+ * Log the sign in when a session first shows up on this phone, however it
+ * began: password, sign up, the confirm link, a reset code, or a session from
+ * before the activity log existed. Watch Tower reads the phone type from it.
+ * Native only: the web build is a preview.
+ */
+function noteSignIn(userId: string): void {
+  if (Platform.OS === 'web' || logging === userId) return;
+  logging = userId;
+  SecureStore.getItemAsync(LOGGED_KEY)
+    .then(async (stored) => {
+      if (stored === userId) return;
+      await logSession('signed_in');
+      await SecureStore.setItemAsync(LOGGED_KEY, userId);
+    })
+    .catch(() => {});
+}
+
+/** On sign out, so the next sign in on this phone is logged again. */
+function forgetSignIn(): Promise<void> {
+  logging = null;
+  if (Platform.OS === 'web') return Promise.resolve();
+  return SecureStore.deleteItemAsync(LOGGED_KEY).catch(() => {});
 }
 
 /**
@@ -169,6 +199,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = backend.onAuthChange((next) => {
       setSession(next);
       if (next) {
+        noteSignIn(next.userId);
         loadMembership();
         loadProfile(next.userId);
       } else {
@@ -187,7 +218,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (email: string, password: string): Promise<Result> => {
     try {
       await backend.signIn(email.trim().toLowerCase(), password);
-      logSession('signed_in');
       return { ok: true };
     } catch (e) {
       return { ok: false, error: message(e) };
@@ -216,8 +246,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     async (email: string, code: string, password: string): Promise<Result> => {
       try {
         await backend.resetPassword(email.trim().toLowerCase(), code.trim(), password);
-        // The reset code signs them in, so this is a sign in too.
-        logSession('signed_in');
         return { ok: true };
       } catch (e) {
         return { ok: false, error: message(e) };
@@ -320,6 +348,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     // While still signed in, so the database knows whose it is.
     await logSession('signed_out');
     await forgetPush();
+    await forgetSignIn();
     await backend.signOut();
   }, []);
 
@@ -327,6 +356,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const deleteAccount = useCallback(async (): Promise<Result> => {
     try {
       await backend.deleteAccount();
+      await forgetSignIn();
       await backend.signOut();
       return { ok: true };
     } catch (e) {

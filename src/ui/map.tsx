@@ -54,11 +54,15 @@ export type MapMarker = {
    * start: the pickup. end: the far end of a route. stop: a stop on the way.
    * drop: where you get off. rider: a rider's drop off, shown to their driver.
    * ride: the pickup of a ride on the list that is not the one picked out.
+   * car: where the driver is right now, shown to riders on the ride.
+   * person: where a waiting rider is right now, shown to their driver.
    */
-  kind: 'start' | 'end' | 'stop' | 'drop' | 'rider' | 'ride';
+  kind: 'start' | 'end' | 'stop' | 'drop' | 'rider' | 'ride' | 'car' | 'person';
   label?: string;
   /** For a rider's drop off: their place in the drop off order, from 1. */
   num?: number;
+  /** For a person: their initials. */
+  initials?: string;
   /** Set to make the marker tappable: what onMarkerPress is told was tapped. */
   tap?: string;
 };
@@ -754,7 +758,17 @@ function Marker({
             </Text>
           </View>
         ) : null}
-        {marker.kind === 'rider' ? (
+        {marker.kind === 'car' ? (
+          <View style={s.dotCar}>
+            <View style={s.dotCarInner} />
+          </View>
+        ) : marker.kind === 'person' ? (
+          <View style={s.dotPerson}>
+            <Text variant="small" style={s.dotPersonText}>
+              {marker.initials ?? ''}
+            </Text>
+          </View>
+        ) : marker.kind === 'rider' ? (
           // A number, not a name: the list under the map says who, and five
           // names on a small map is exactly the clutter to avoid.
           <View style={s.dotRider}>
@@ -907,6 +921,42 @@ const s = themed(() => {
   },
   // Pine on lime in both themes: the badge is the logo's own pairing.
   dotRiderText: { color: PINE, fontSize: 9, lineHeight: 11, fontWeight: '800' },
+  // The driver's car, live: the biggest thing on the map, because it is the
+  // thing people are watching for.
+  dotCar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: PINE,
+    borderWidth: 3,
+    borderColor: LIME,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 4,
+  },
+  dotCarInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: LIME },
+  // A waiting rider, live: their initials, so the driver knows who is where.
+  dotPerson: {
+    minWidth: 26,
+    height: 26,
+    borderRadius: 13,
+    paddingHorizontal: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2.5,
+    borderColor: PINE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 3,
+  },
+  dotPersonText: { color: PINE, fontSize: 10, lineHeight: 12, fontWeight: '800' },
   label: {
     position: 'absolute',
     bottom: BOX_H / 2 + 10,

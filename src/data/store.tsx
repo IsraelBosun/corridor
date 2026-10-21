@@ -4,10 +4,11 @@ import { knownRoad, roadFor } from '@/lib/directions';
 import { placeOnRoute, type LngLat } from '@/lib/mapbox';
 import * as SecureStore from 'expo-secure-store';
 
-import { useNow, type Minutes } from '@/lib/time';
-import { backend, type TripFields, type TripRow } from './backend';
+import { MORNING_END_MIN } from '@/lib/config';
+import { hhmm, useNow, type Minutes } from '@/lib/time';
+import { backend, type PlanFields, type TripFields, type TripRow } from './backend';
 import { toPerson, useSession } from './session';
-import type { Destination, DropOff, Person, Role, Trip } from './types';
+import type { Destination, Direction, DropOff, Person, Role, Trip } from './types';
 
 /**
  * Everything the screens read and write.
@@ -27,7 +28,10 @@ function toMinutes(iso: string): Minutes {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-/** Minutes are assumed to mean today. Evening direction only, so they do. */
+/**
+ * Minutes are assumed to mean today. Rides are posted on the day they leave,
+ * the morning one in the morning and the evening one later, so they do.
+ */
 function toTimestamp(min: Minutes): string {
   const d = new Date();
   d.setHours(Math.floor(min / 60), min % 60, 0, 0);
@@ -43,6 +47,8 @@ function toTrip(row: TripRow): Trip {
     id: row.id,
     code: row.code,
     driverId: row.driver_id,
+    // Rows from before rides had a direction were all evening rides.
+    direction: row.direction ?? 'home',
     departMin: toMinutes(row.depart_at),
     departAt: new Date(row.depart_at).getTime(),
     toleranceMin: row.tolerance_min,
@@ -57,6 +63,35 @@ function toTrip(row: TripRow): Trip {
     origin: place(row.origin_name, row.origin_lat, row.origin_lng),
     destination: place(row.destination_name, row.destination_lat, row.destination_lng),
     contributionNaira: row.contribution_naira ?? undefined,
+    planId: row.plan_id ?? undefined,
+  };
+}
+
+/** Today's date on this phone, "2026-10-21", for the day a regular ride is for. */
+function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** A draft as a regular ride on these weekdays. */
+function toPlan(t: TripDraft, weekdays: number[]): PlanFields {
+  const f = toFields(t);
+  return {
+    direction: t.direction,
+    weekdays,
+    depart_time: `${hhmm(t.departMin)}:00`,
+    tolerance_min: f.tolerance_min,
+    seats_total: f.seats_total,
+    vehicle: f.vehicle,
+    note: f.note,
+    origin_name: f.origin_name ?? '',
+    origin_lat: f.origin_lat ?? 0,
+    origin_lng: f.origin_lng ?? 0,
+    destination_name: f.destination_name,
+    destination_lat: f.destination_lat,
+    destination_lng: f.destination_lng,
+    contribution_naira: f.contribution_naira,
+    announce_on_depart: f.announce_on_depart,
   };
 }
 
@@ -66,6 +101,7 @@ function place(name: string | null, lat: number | null, lng: number | null): Des
 
 function toFields(t: TripDraft): TripFields {
   return {
+    direction: t.direction,
     depart_at: toTimestamp(t.departMin),
     tolerance_min: t.toleranceMin,
     seats_total: t.seatsTotal,
@@ -102,11 +138,15 @@ type Store = {
   /** The name to put in a sentence, with a neutral stand in before it is set. */
   dropOffName: string;
   /**
-   * Does this trip go past where you get off. Measured against the road the
-   * driver will actually drive, from where they start to their destination. Without
-   * coordinates on both sides there is no honest answer, so it says no.
+   * Does this trip go past your place: where you get off on the way home, or
+   * where you are picked up on the way to work. Measured against the road
+   * the driver will actually drive, from where they start to their
+   * destination. Without coordinates on both sides there is no honest
+   * answer, so it says no.
    */
   serves: (trip: Trip) => boolean;
+  /** The same test for any point, such as where this phone is. */
+  passesNear: (trip: Trip, place: LngLat) => boolean;
   /**
    * Metres driven from the start before the car is nearest this place. Puts
    * the drop offs in the order they happen.
@@ -115,14 +155,18 @@ type Store = {
   /** The road a trip drives, or straight lines between its points until that arrives. */
   routeOf: (trip: Trip) => { line: LngLat[]; road: boolean };
 
-  /** Tonight's live ride you are driving, if any. */
+  /** The soonest live ride you are driving today, either way, if any. */
   myTrip: Trip | undefined;
+  /** Your live ride one way: to work or home. */
+  myTripFor: (direction: Direction) => Trip | undefined;
   /**
-   * The ride you hold a seat on tonight, if any. Cancelled ones included, so
-   * the rider is told, and ones already on the road, until the rider says they
-   * have been dropped off.
+   * The soonest ride you hold a seat on today, either way, if any. Cancelled
+   * ones included, so the rider is told, and ones already on the road, until
+   * the rider says they have been dropped off.
    */
   mySeat: Trip | undefined;
+  /** The same, one way: to work or home. */
+  mySeatFor: (direction: Direction) => Trip | undefined;
   /** A ride that has set off and is not yet over for you, as driver or rider. */
   underway: (trip: Trip) => boolean;
   /**
@@ -141,15 +185,20 @@ type Store = {
   markPresent: (tripId: string, personId: string) => Promise<void>;
   markAbsent: (tripId: string, personId: string) => Promise<void>;
   depart: (tripId: string) => Promise<void>;
-  postTrip: (t: TripDraft) => Promise<string | null>;
   /**
-   * Change tonight's post. A driver gets one live trip, so a second thought
-   * about the time is an edit. Reserved seats survive it.
+   * Post a ride. With weekdays, it is also a regular ride: the database posts
+   * it again on each of those days, and this is today's. today false sets up
+   * the regular ride only, when it is too late for one today.
+   */
+  postTrip: (t: TripDraft, weekdays?: number[], today?: boolean) => Promise<string | null>;
+  /**
+   * Change a posted ride. A driver gets one live ride each way, so a second
+   * thought about the time is an edit. Reserved seats survive it.
    */
   editTrip: (tripId: string, t: TripDraft) => Promise<boolean>;
 };
 
-export type TripDraft = Omit<Trip, 'id' | 'code' | 'driverId' | 'riders' | 'presentAt' | 'status' | 'departAt'>;
+export type TripDraft = Omit<Trip, 'id' | 'code' | 'driverId' | 'riders' | 'presentAt' | 'status' | 'departAt' | 'planId'>;
 
 const Ctx = createContext<Store | null>(null);
 
@@ -163,8 +212,20 @@ const UNKNOWN: Person = {
 };
 
 const FINISHED_KEY = 'corridor.finished-rides';
-/** The longest an evening ride can still be "on the way" without anyone saying it is over. */
+/** The longest a ride can still be "on the way" without anyone saying it is over. */
 const RIDE_MAX_MIN = 180;
+
+/**
+ * A posted ride the driver never started stops being anyone's ride this long
+ * after it was due, so a morning ride nobody closed does not sit on the
+ * evening's screens. The database still counts it as live until
+ * live_cutoff(), which only matters for posting another ride the same way.
+ */
+const WAITING_MAX_MS = RIDE_MAX_MIN * 60 * 1000;
+
+function waitingToLeave(t: Trip, nowMs = Date.now()): boolean {
+  return (t.status === 'posted' || t.status === 'boarding') && nowMs - t.departAt < WAITING_MAX_MS;
+}
 
 /**
  * Older than this and a ride is last night's. Rides are kept for good, so the
@@ -224,6 +285,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // Old rides are left alone, never cancelled or emptied: they are the
       // record of who rode with whom.
       const since = new Date(Date.now() - STALE_MS).toISOString();
+      // Today's regular rides appear when anyone first asks for the list.
+      // A failure here is not a failure to load: the list is still right.
+      await backend.postPlannedRides().catch(() => {});
       const [tripRows, profileRows] = await Promise.all([backend.listTrips(since), backend.listProfiles()]);
       setError(null);
       setTrips(tripRows.map(toTrip));
@@ -309,17 +373,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [pointsOf, roads]
   );
 
+  const passesNear = useCallback(
+    (trip: Trip, place: LngLat) => {
+      const { line, road } = routeOf(trip);
+      if (line.length < 2) return false;
+      return placeOnRoute(place, line).off <= (road ? NEAR_ROAD_M : NEAR_LINE_M);
+    },
+    [routeOf]
+  );
+
   const serves = useCallback(
     (trip: Trip) => {
       if (!dropOff) return false;
       const { lat, lng } = dropOff;
       if (typeof lat !== 'number' || typeof lng !== 'number') return false;
-
-      const { line, road } = routeOf(trip);
-      if (line.length < 2) return false;
-      return placeOnRoute({ lat, lng }, line).off <= (road ? NEAR_ROAD_M : NEAR_LINE_M);
+      return passesNear(trip, { lat, lng });
     },
-    [dropOff, routeOf]
+    [dropOff, passesNear]
   );
 
   const alongRoute = useCallback(
@@ -365,26 +435,42 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [finished, now]
   );
 
-  const myTrip = useMemo(
-    () => trips.find((t) => t.driverId === me?.id && (t.status === 'posted' || t.status === 'boarding')),
-    [trips, me]
+  // Trips arrive sorted by departure, so the first match is the soonest.
+  // now is read so these move on as the clock does.
+  const myTrips = useMemo(
+    () => trips.filter((t) => t.driverId === me?.id && waitingToLeave(t)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trips, me, now]
   );
-  const mySeat = useMemo(() => {
-    const held = trips.filter(
-      (t) =>
-        me &&
-        // Testers may hold a seat in their own ride; nobody else can.
-        (tester || t.driverId !== me.id) &&
-        t.riders.includes(me.id) &&
-        // Once the car has left, the rider still has a ride until it is over.
-        (t.status !== 'left' || underway(t)) &&
-        // A cancelled ride is shown until the rider moves on from it.
-        (t.status !== 'cancelled' || !finished.has(t.id))
-    );
-    // A live seat always wins over a cancelled one, so booking another ride
-    // after a cancellation shows the new ride.
-    return held.find((t) => t.status !== 'cancelled') ?? held[0];
-  }, [trips, me, underway, tester, finished]);
+  const myTrip = myTrips[0];
+  const myTripFor = useCallback(
+    (direction: Direction) => myTrips.find((t) => t.direction === direction),
+    [myTrips]
+  );
+
+  const held = useMemo(
+    () =>
+      trips.filter(
+        (t) =>
+          me &&
+          // Testers may hold a seat in their own ride; nobody else can.
+          (tester || t.driverId !== me.id) &&
+          t.riders.includes(me.id) &&
+          // Once the car has left, the rider still has a ride until it is over.
+          (t.status !== 'left' || underway(t)) &&
+          // A ride the driver never started is over too.
+          (t.status === 'left' || t.status === 'cancelled' || waitingToLeave(t)) &&
+          // A cancelled ride is shown until the rider moves on from it.
+          (t.status !== 'cancelled' || !finished.has(t.id))
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trips, me, underway, tester, finished, now]
+  );
+  const mySeat = useMemo(() => pickSeat(held), [held]);
+  const mySeatFor = useCallback(
+    (direction: Direction) => pickSeat(held.filter((t) => t.direction === direction)),
+    [held]
+  );
 
   /** Run a write, surface its failure, and refetch either way. */
   const run = useCallback(
@@ -429,9 +515,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const postTrip: Store['postTrip'] = useCallback(
-    async (draft) => {
+    async (draft, weekdays, todayToo = true) => {
       if (!me) return null;
-      return run<string | null>(() => backend.createTrip(me.id, toFields(draft)), null);
+      return run<string | null>(async () => {
+        if (!weekdays || weekdays.length === 0) return backend.createTrip(me.id, toFields(draft));
+        const planId = await backend.createPlan(me.id, toPlan(draft, weekdays));
+        // Set up in the evening for the mornings ahead: nothing to post today.
+        if (!todayToo) return planId;
+        try {
+          return await backend.createTrip(me.id, toFields(draft), { id: planId, day: today() });
+        } catch (e) {
+          // No half made regular ride: today's post failed, so neither stays.
+          await backend.deletePlan(planId).catch(() => {});
+          throw e;
+        }
+      }, null);
     },
     [me, run]
   );
@@ -458,10 +556,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       dropOff,
       dropOffName,
       serves,
+      passesNear,
       alongRoute,
       routeOf,
       myTrip,
+      myTripFor,
       mySeat,
+      mySeatFor,
       underway,
       finishRide,
       setDropOff,
@@ -477,7 +578,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       trips, loading, error, clearError, me, role, people, person,
-      dropOff, dropOffName, serves, alongRoute, routeOf, myTrip, mySeat, underway, finishRide, setDropOff, refresh, reserve, releaseSeat,
+      dropOff, dropOffName, serves, passesNear, alongRoute, routeOf, myTrip, myTripFor, mySeat, mySeatFor, underway, finishRide, setDropOff, refresh, reserve, releaseSeat,
       cancelTrip, markPresent, markAbsent, depart, postTrip, editTrip,
     ]
   );
@@ -506,6 +607,27 @@ export function tripPoints(trip: Trip): LngLat[] {
 /** Where riders meet the car, for a sentence. */
 export function startName(trip: Trip): string {
   return trip.origin?.name ?? 'the pickup point';
+}
+
+/**
+ * A live seat always wins over a cancelled one, so booking another ride
+ * after a cancellation shows the new ride.
+ */
+function pickSeat(list: Trip[]): Trip | undefined {
+  return list.find((t) => t.status !== 'cancelled') ?? list[0];
+}
+
+/**
+ * Which way the screens lead with: to work until 10:00, when the last
+ * morning ride can leave, and home after that.
+ */
+export function directionNow(nowMin: Minutes): Direction {
+  return nowMin < MORNING_END_MIN ? 'work' : 'home';
+}
+
+/** "to work" or "home", as in "your ride to work", "rides home". */
+export function directionWords(d: Direction): string {
+  return d === 'work' ? 'to work' : 'home';
 }
 
 /** Where the driver is going, for a sentence. */

@@ -31,15 +31,17 @@ const LAGOS: LngLat[] = [
  * With no ride to show, the map sits on this phone's own position, or on
  * Lagos when that is not known. It is never pinned to any one building.
  *
- * It never plots another person. The drop off pin is the place the rider chose
- * to be set down, shown only to them and to people on their trip. The one live
- * position is the viewer's own, as a "you are here" dot on their screen only.
+ * The drop off pin is the place the rider chose to be set down (or picked up,
+ * in the morning), shown only to them and to people on their trip. Other
+ * people's live positions appear only around a pickup, from lib/live.ts: the
+ * car to its riders, each waiting rider to their driver.
  */
 export function TripMap({
   origin,
   destination,
   dropOff,
   riderDrops,
+  live,
   padding,
   controlsBottom,
 }: {
@@ -51,6 +53,11 @@ export function TripMap({
   dropOff?: DropOff | null;
   /** The driver's view: each rider's drop off, numbered in the order they happen. */
   riderDrops?: RiderDrop[];
+  /**
+   * Where others on the ride are right now. Drawn on top, and never framed,
+   * so the camera does not chase a moving car.
+   */
+  live?: LiveMarker[];
   padding?: Padding;
   /** Lifts the frame button clear of a bottom sheet. */
   controlsBottom?: number;
@@ -89,8 +96,11 @@ export function TripMap({
       out.push({ id: `rider-${r.id}`, lat: r.lat, lng: r.lng, kind: 'rider', num: r.num });
     }
     if (drop && dropOff) out.push({ id: 'drop', lat: drop.lat, lng: drop.lng, kind: 'drop', label: dropOff.name });
+    for (const l of live ?? []) {
+      out.push({ id: `live-${l.id}`, lat: l.lat, lng: l.lng, kind: l.kind, initials: l.initials, label: l.label });
+    }
     return out;
-  }, [origin, destination, riderDrops, drop, dropOff]);
+  }, [origin, destination, riderDrops, drop, dropOff, live]);
 
   const routes = useMemo<MapRoute[]>(
     () => (road.length >= 2 ? [{ id: 'route', points: road, tone: 'primary' }] : []),
@@ -118,6 +128,15 @@ export function TripMap({
     />
   );
 }
+
+export type LiveMarker = {
+  id: string;
+  lat: number;
+  lng: number;
+  kind: 'car' | 'person';
+  initials?: string;
+  label?: string;
+};
 
 export type RiderDrop = {
   id: string;
@@ -162,8 +181,9 @@ export function useRiderDrops(trip: Trip | undefined, riderIds: string[]): Rider
 }
 
 /**
- * The drive in Google Maps: every drop off with a place, in order, then where
- * the driver is going. For a driver on the way, on their own tap.
+ * The drive in Google Maps: every drop off (or, in the morning, every pickup)
+ * with a place, in order, then where the driver is going. For a driver on the
+ * way, on their own tap.
  */
 export function DirectionsButton({ trip, drops }: { trip: Trip; drops: RiderDrop[] }) {
   const stops = drops
@@ -174,10 +194,23 @@ export function DirectionsButton({ trip, drops }: { trip: Trip; drops: RiderDrop
 
   async function go() {
     const ok = await openDirections(stops, end);
-    if (!ok) showDialog('Google Maps did not open', 'Try again, or follow the drop offs listed here.', [{ text: 'OK' }], 'alert');
+    if (!ok) {
+      showDialog(
+        'Google Maps did not open',
+        `Try again, or follow the ${trip.direction === 'work' ? 'pickups' : 'drop offs'} listed here.`,
+        [{ text: 'OK' }],
+        'alert'
+      );
+    }
   }
 
-  return <Button label={stops.length > 0 ? 'Drop offs in Google Maps' : 'Directions in Google Maps'} kind="secondary" onPress={go} />;
+  const label =
+    stops.length === 0
+      ? 'Directions in Google Maps'
+      : trip.direction === 'work'
+        ? 'Pickups in Google Maps'
+        : 'Drop offs in Google Maps';
+  return <Button label={label} kind="secondary" onPress={go} />;
 }
 
 /** More than this and the roads turn into a tangle nobody can read. */

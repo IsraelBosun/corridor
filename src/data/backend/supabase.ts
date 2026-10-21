@@ -1,7 +1,7 @@
 import * as Linking from 'expo-linking';
 
 import { supabase } from '@/lib/supabase';
-import type { ActivityRow, AuthSession, Backend, Membership, MessageRow, PayoutRow, ProfileRow, TripRow } from './types';
+import type { ActivityRow, AuthSession, Backend, LivePositionRow, Membership, MessageRow, PayoutRow, PlanRow, ProfileRow, TripRow } from './types';
 
 /**
  * The hosted backend. The rules live in the database (RLS, triggers and the
@@ -13,7 +13,10 @@ const PROFILE_COLUMNS =
 
 /** Columns, and the reservations, in one round trip. */
 const TRIP_SELECT =
-  'id, code, driver_id, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira, reservations(rider_id, present_at)';
+  'id, code, driver_id, direction, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira, plan_id, reservations(rider_id, present_at)';
+
+const PLAN_COLUMNS =
+  'id, direction, weekdays, depart_time, tolerance_min, seats_total, vehicle, note, origin_name, origin_lat, origin_lng, destination_name, destination_lat, destination_lng, contribution_naira, announce_on_depart, active';
 
 function fail(error: { message: string } | null): void {
   if (error) throw new Error(error.message);
@@ -210,14 +213,60 @@ export const supabaseBackend: Backend = {
     };
   },
 
-  async createTrip(driverId, fields) {
+  async createTrip(driverId, fields, plan) {
     const { data, error } = await supabase
       .from('trips')
+      .insert({ driver_id: driverId, ...fields, ...(plan ? { plan_id: plan.id, plan_day: plan.day } : {}) })
+      .select('id')
+      .single();
+    fail(error);
+    return (data as { id: string }).id;
+  },
+
+  async listPlans() {
+    // RLS returns only the caller's own.
+    const { data, error } = await supabase.from('ride_plans').select(PLAN_COLUMNS).order('created_at');
+    fail(error);
+    return (data ?? []) as PlanRow[];
+  },
+
+  async createPlan(driverId, fields) {
+    const { data, error } = await supabase
+      .from('ride_plans')
       .insert({ driver_id: driverId, ...fields })
       .select('id')
       .single();
     fail(error);
     return (data as { id: string }).id;
+  },
+
+  async setPlanActive(planId, active) {
+    fail((await supabase.from('ride_plans').update({ active }).eq('id', planId)).error);
+  },
+
+  async deletePlan(planId) {
+    fail((await supabase.from('ride_plans').delete().eq('id', planId)).error);
+  },
+
+  async postPlannedRides() {
+    fail((await supabase.rpc('post_planned_rides')).error);
+  },
+
+  async getAreaRides() {
+    // RLS returns only the caller's own row. No row means never changed: on.
+    const { data, error } = await supabase.from('notify_prefs').select('area_rides').maybeSingle();
+    fail(error);
+    return (data as { area_rides: boolean } | null)?.area_rides ?? true;
+  },
+
+  async setAreaRides(on) {
+    const { data } = await supabase.auth.getSession();
+    const userId = data.session?.user.id;
+    if (!userId) throw new Error('Sign in again to change this.');
+    const { error } = await supabase
+      .from('notify_prefs')
+      .upsert({ user_id: userId, area_rides: on, updated_at: new Date().toISOString() });
+    fail(error);
   },
 
   async editTrip(tripId, fields) {
@@ -330,5 +379,26 @@ export const supabaseBackend: Backend = {
     const { data, error } = await supabase.rpc('record_track', { p_trip: tripId, p_points: points });
     fail(error);
     return typeof data === 'number' ? data : 0;
+  },
+
+  async sharePosition(tripId, lat, lng, accuracy) {
+    const { data, error } = await supabase.rpc('share_position', {
+      p_trip: tripId,
+      p_lat: lat,
+      p_lng: lng,
+      p_acc: accuracy,
+    });
+    fail(error);
+    return data === true;
+  },
+
+  async stopSharing(tripId) {
+    fail((await supabase.rpc('stop_sharing', { p_trip: tripId })).error);
+  },
+
+  async ridePositions(tripId) {
+    const { data, error } = await supabase.rpc('ride_positions', { p_trip: tripId });
+    fail(error);
+    return (data ?? []) as LivePositionRow[];
   },
 };

@@ -2,8 +2,9 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 
-import { USING_LOCAL } from '@/data/backend';
+import { backend, USING_LOCAL } from '@/data/backend';
 import { usePayout } from '@/data/payout';
+import { daysText, usePlans, type Plan } from '@/data/plans';
 import { useSession } from '@/data/session';
 import { useStore } from '@/data/store';
 import { useLastOrigin } from '@/lib/origin';
@@ -40,7 +41,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function YouScreen() {
   const router = useRouter();
-  const { me, role, myTrip, mySeat } = useStore();
+  const { me, role, myTrip, mySeatFor } = useStore();
   const { email, signOut, deleteAccount, setRole, tester } = useSession();
   const [error, setError] = useState<string | null>(null);
   useStatusBand(PINE);
@@ -48,7 +49,9 @@ export default function YouScreen() {
   const driver = role === 'driver';
   // A seat on a ride that has already left is not something to give up, and
   // the backend only counts rides still waiting at the pickup.
-  const liveSeat = mySeat && (mySeat.status === 'posted' || mySeat.status === 'boarding') ? mySeat : undefined;
+  const waiting = (t: ReturnType<typeof mySeatFor>) =>
+    t && (t.status === 'posted' || t.status === 'boarding') ? t : undefined;
+  const liveSeat = waiting(mySeatFor('work')) ?? waiting(mySeatFor('home'));
 
   // Tonight already ties you to one side. The backend refuses the switch too;
   // this just says so before anyone taps. Testers switch freely.
@@ -56,7 +59,7 @@ export default function YouScreen() {
     ? null
     : driver
       ? myTrip
-        ? "Cancel tonight's ride to switch."
+        ? 'Cancel your posted ride to switch.'
         : null
       : liveSeat
         ? 'Give up your seat to switch.'
@@ -162,6 +165,8 @@ export default function YouScreen() {
 
       {driver ? (
         <>
+          <SectionTitle>Regular rides</SectionTitle>
+          <RegularRides />
           <SectionTitle>Your car</SectionTitle>
           <CarField />
           <SectionTitle>Bank details</SectionTitle>
@@ -174,6 +179,7 @@ export default function YouScreen() {
 
       <SectionTitle>Reminders</SectionTitle>
       <Reminders driver={driver} />
+      {driver ? null : <AreaRides />}
 
       <SectionTitle>Appearance</SectionTitle>
       <ModePicker />
@@ -382,8 +388,8 @@ function Commute({ driver }: { driver: boolean }) {
       </Pressable>
       <Text variant="small" tone="faint" style={s.under}>
         {driver
-          ? 'Tap to change where you usually head. It is filled in each time you offer a ride, and you can change either end on any one ride.'
-          : 'Rides whose road passes close to it come first. Change it any evening from the home screen.'}
+          ? 'Tap to change where you usually head home. It is filled in each time you offer a ride (as the start of a ride to work), and you can change either end on any one ride.'
+          : 'Where you get off on the way home, and where you are picked up on the way to work. Rides whose road passes close to it come first.'}
       </Text>
     </>
   );
@@ -502,10 +508,12 @@ function Reminders({ driver }: { driver: boolean }) {
       <View style={s.cardHead}>
         <View style={s.flex}>
           <Text variant="body" style={s.strong}>
-            Weekday nudge at 15:00
+            Weekday nudges at 06:00 and 15:00
           </Text>
           <Text variant="small" tone="muted">
-            {driver ? 'A reminder to post your ride home.' : 'A reminder to look for a ride home.'}
+            {driver
+              ? 'A reminder to post your ride to work, and your ride home.'
+              : 'A reminder to look for a ride to work, and a ride home.'}
           </Text>
         </View>
         {on === null ? (
@@ -516,7 +524,7 @@ function Reminders({ driver }: { driver: boolean }) {
             onValueChange={toggle}
             trackColor={{ false: color.lineStrong, true: color.brand }}
             thumbColor={color.surface}
-            accessibilityLabel="Weekday reminder at 15:00"
+            accessibilityLabel="Weekday reminders at 06:00 and 15:00"
           />
         )}
       </View>
@@ -533,6 +541,124 @@ function Reminders({ driver }: { driver: boolean }) {
             </Text>
           </Text>
         </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** The driver's regular rides: when, which days, and the way to pause or remove each. */
+function RegularRides() {
+  const { me } = useStore();
+  const { plans, loading, failed, setActive, remove, reload } = usePlans(me?.id);
+
+  function confirmRemove(p: Plan) {
+    showDialog(
+      'Stop this regular ride?',
+      'No more rides are posted from it. A ride it already posted today stays, and you can cancel that one on its own.',
+      [
+        { text: 'Keep it', style: 'cancel' },
+        { text: 'Stop it', style: 'destructive', onPress: () => remove(p.id) },
+      ]
+    );
+  }
+
+  return (
+    <View style={s.card}>
+      {loading ? (
+        <Text variant="small" tone="muted">
+          Loading
+        </Text>
+      ) : failed ? (
+        <Pressable onPress={reload} accessibilityRole="button">
+          <Text variant="small" tone="muted">
+            Could not load your regular rides. Tap to try again.
+          </Text>
+        </Pressable>
+      ) : plans.length === 0 ? (
+        <Text variant="small" tone="muted">
+          None yet. When you offer a ride, pick the days under Repeat and it is posted for you every
+          week.
+        </Text>
+      ) : (
+        plans.map((p, i) => (
+          <View key={p.id} style={[s.plan, i > 0 && s.planGap]}>
+            <View style={s.flex}>
+              <Text variant="body" style={s.strong}>
+                {p.direction === 'work' ? 'To work' : 'Home'} at {p.time}
+                {p.active ? '' : ', paused'}
+              </Text>
+              <Text variant="small" tone="muted" numberOfLines={2}>
+                Every {daysText(p.weekdays)}. {p.from} to {p.to}
+              </Text>
+            </View>
+            <Pressable onPress={() => setActive(p.id, !p.active)} accessibilityRole="button" hitSlop={6}>
+              <Text variant="small" tone="brand" style={s.strong}>
+                {p.active ? 'Pause' : 'Resume'}
+              </Text>
+            </Pressable>
+            <Pressable onPress={() => confirmRemove(p)} accessibilityRole="button" hitSlop={6}>
+              <Text variant="small" tone="stop" style={s.strong}>
+                Stop
+              </Text>
+            </Pressable>
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
+/** The push when a ride passing near your place is posted. Kept in the database, which sends it. */
+function AreaRides() {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    backend
+      .getAreaRides()
+      .then(setOn)
+      .catch(() => setOn(true));
+  }, []);
+
+  async function toggle(next: boolean) {
+    setOn(next);
+    setFailed(false);
+    try {
+      await backend.setAreaRides(next);
+    } catch {
+      setOn(!next);
+      setFailed(true);
+    }
+  }
+
+  return (
+    <View style={[s.card, s.cardAfter]}>
+      <View style={s.cardHead}>
+        <View style={s.flex}>
+          <Text variant="body" style={s.strong}>
+            New rides near you
+          </Text>
+          <Text variant="small" tone="muted">
+            A push when a ride passing your place is posted. At most one each way a day, never
+            between 22:00 and 06:00.
+          </Text>
+        </View>
+        {on === null ? (
+          <View style={s.switchSpace} />
+        ) : (
+          <Switch
+            value={on}
+            onValueChange={toggle}
+            trackColor={{ false: color.lineStrong, true: color.brand }}
+            thumbColor={color.surface}
+            accessibilityLabel="Push when a ride near you is posted"
+          />
+        )}
+      </View>
+      {failed ? (
+        <Text variant="small" tone="stop" style={s.cardNote}>
+          That did not save. Try again.
+        </Text>
       ) : null}
     </View>
   );
@@ -827,6 +953,9 @@ const s = themed(() =>
     flex: { flex: 1 },
     bold: { fontWeight: '600' },
     strong: { fontWeight: '700' },
+    cardAfter: { marginTop: space.sm },
+    plan: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+    planGap: { marginTop: space.md, paddingTop: space.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: color.line },
     pressed: { opacity: 0.7 },
     dim: { opacity: 0.5 },
     gapTop: { marginTop: space.md },
