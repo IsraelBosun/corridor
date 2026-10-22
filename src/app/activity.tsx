@@ -1,9 +1,10 @@
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet } from 'react-native';
 
 import { backend, type ActivityRow } from '@/data/backend';
 import { color, space, themed } from '@/theme/tokens';
-import { Row, Screen, ScreenHeader } from '@/ui/primitives';
+import { Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 
 /**
@@ -41,11 +42,61 @@ export default function ActivityScreen() {
           Nothing yet.
         </Text>
       ) : (
-        rows.map((r, i) => (
-          <Row key={r.id} title={label(r)} subtitle={when(r.at)} last={i === rows.length - 1} />
-        ))
+        <>
+          <PastRides rows={rows} />
+          <SectionTitle>Everything recorded</SectionTitle>
+          {rows.map((r, i) => (
+            <Row key={r.id} title={label(r)} subtitle={when(r.at)} last={i === rows.length - 1} />
+          ))}
+        </>
       )}
     </Screen>
+  );
+}
+
+/** Lines that mean you were on that ride, as its driver or with a seat. */
+const ON_RIDE = new Set(['ride_posted', 'ride_left', 'seat_booked', 'checked_in', 'message_sent', 'location_recording_started']);
+const PAST_DAYS = 14;
+const PAST_MAX = 10;
+
+/**
+ * The rides you were on lately, each a way into reporting it. The ride screen
+ * has its own Report button, but a ride drops off the map by the next
+ * morning, and that is often when someone decides to say something.
+ */
+function PastRides({ rows }: { rows: ActivityRow[] }) {
+  const router = useRouter();
+  const since = Date.now() - PAST_DAYS * 24 * 60 * 60 * 1000;
+  // Newest first, one line per ride.
+  const rides = new Map<string, { at: string; drove: boolean; code: string | null }>();
+  for (const r of rows) {
+    if (!r.trip_id || !ON_RIDE.has(r.action) || new Date(r.at).getTime() < since) continue;
+    const seen = rides.get(r.trip_id);
+    const drove = r.action === 'ride_posted' || r.action === 'ride_left';
+    const code = text(r.detail?.code);
+    if (seen) {
+      seen.drove ||= drove;
+      seen.code ??= code;
+    } else if (rides.size < PAST_MAX) {
+      rides.set(r.trip_id, { at: r.at, drove, code });
+    }
+  }
+  if (rides.size === 0) return null;
+
+  const list = [...rides.entries()];
+  return (
+    <>
+      <SectionTitle>Report a past ride</SectionTitle>
+      {list.map(([tripId, ride], i) => (
+        <Row
+          key={tripId}
+          title={`${ride.drove ? 'A ride you drove' : 'A ride you took'}${ride.code ? `, ${ride.code}` : ''}`}
+          subtitle={when(ride.at)}
+          onPress={() => router.push({ pathname: '/report/[id]', params: { id: tripId } })}
+          last={i === list.length - 1}
+        />
+      ))}
+    </>
   );
 }
 

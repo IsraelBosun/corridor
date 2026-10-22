@@ -608,6 +608,32 @@ export function useTrip(id: string | undefined): Trip | undefined {
   return trips.find((t) => t.id === id);
 }
 
+/**
+ * A ride by id, even one older than tonight's list: from the store when it is
+ * there, otherwise read on its own. For reporting a ride the next day.
+ */
+export function useAnyTrip(id: string | undefined): { trip: Trip | undefined; loading: boolean } {
+  const { trips, loading: listLoading } = useStore();
+  const listed = trips.find((t) => t.id === id);
+  const [fetched, setFetched] = useState<Trip | null | undefined>(undefined);
+  const look = Boolean(id && !listed && !listLoading);
+
+  useEffect(() => {
+    if (!look || !id) return;
+    let alive = true;
+    backend
+      .getTrip(id)
+      .then((row) => alive && setFetched(row ? toTrip(row) : null))
+      .catch(() => alive && setFetched(null));
+    return () => {
+      alive = false;
+    };
+  }, [look, id]);
+
+  if (listed) return { trip: listed, loading: false };
+  return { trip: fetched ?? undefined, loading: listLoading || (look && fetched === undefined) };
+}
+
 /** A trip's start, then its end, where each is known. */
 export function tripPoints(trip: Trip): LngLat[] {
   return [trip.origin, trip.destination]

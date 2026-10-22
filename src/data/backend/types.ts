@@ -223,6 +223,11 @@ export interface Backend {
   // The corridor
   /** Rides departing after `since` (ISO time). Older ones are kept, not shown. */
   listTrips(since: string): Promise<TripRow[]>;
+  /**
+   * One ride, however old. Older than tonight's list, only the driver and its
+   * riders can read it, so a past ride can still be reported.
+   */
+  getTrip(id: string): Promise<TripRow | null>;
   /** Called whenever a trip or a reservation changes. Returns an unsubscribe. */
   onTripsChange(cb: () => void): () => void;
 

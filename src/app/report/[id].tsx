@@ -1,9 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { backend, type ReportCategory } from '@/data/backend';
-import { useStore, useTrip } from '@/data/store';
+import { useAnyTrip, useStore } from '@/data/store';
 import { color, font, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, CheckIcon, ShieldIcon } from '@/ui/icons';
 import { Avatar, Button, Callout, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
@@ -31,7 +31,8 @@ export default function ReportScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { person, me } = useStore();
-  const trip = useTrip(id);
+  // A past ride too: something that happened last night is reported the next day.
+  const { trip, loading } = useAnyTrip(id);
 
   // undefined: not chosen yet. null: the ride as a whole.
   const [about, setAbout] = useState<string | null | undefined>(undefined);
@@ -47,9 +48,13 @@ export default function ReportScreen() {
     return (
       <Screen>
         <ScreenHeader title="Report a problem" icon="close" />
-        <Text variant="body" tone="muted">
-          This ride is no longer here, so it cannot be reported from the app.
-        </Text>
+        {loading ? (
+          <ActivityIndicator color={color.inkFaint} />
+        ) : (
+          <Text variant="body" tone="muted">
+            This ride could not be found. You can only report a ride you drove or held a seat on.
+          </Text>
+        )}
       </Screen>
     );
   }

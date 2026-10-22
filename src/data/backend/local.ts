@@ -453,6 +453,11 @@ export const localBackend: Backend = {
     }));
   },
 
+  async getTrip(id) {
+    // Every ride, old ones included, then the one asked for.
+    return (await localBackend.listTrips('')).find((t) => t.id === id) ?? null;
+  },
+
   onTripsChange(cb) {
     tripListeners.add(cb);
     return () => tripListeners.delete(cb);

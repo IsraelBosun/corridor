@@ -202,6 +202,12 @@ export const supabaseBackend: Backend = {
     return (data ?? []) as TripRow[];
   },
 
+  async getTrip(id) {
+    const { data, error } = await supabase.from('trips').select(TRIP_SELECT).eq('id', id).maybeSingle();
+    fail(error);
+    return (data as TripRow | null) ?? null;
+  },
+
   onTripsChange(cb) {
     const channel = supabase
       .channel('corridor-changes')
