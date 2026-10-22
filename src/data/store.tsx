@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { knownRoad, roadFor } from '@/lib/directions';
 import { placeOnRoute, type LngLat } from '@/lib/mapbox';
@@ -324,6 +325,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
   }, [session, refresh]);
 
+  // The change subscription drops while the app is in the background, and
+  // what changed meanwhile is never replayed. Coming back, fetch the lot.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => sub.remove();
+  }, [refresh]);
+
   const clearError = useCallback(() => setError(null), []);
 
   const person = useCallback(
@@ -430,8 +440,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       !finished.has(t.id) &&
       // A ride nobody marked done still ends: nothing on this corridor takes
       // three hours, and an evening ride must not still be "on the way" at 1am.
-      // Minutes since departure, wrapping past midnight.
-      (now - t.departMin + 1440) % 1440 < RIDE_MAX_MIN,
+      // Counted from the time it was due. A driver who sets off early is on
+      // the road at once, not hidden until that time comes.
+      Date.now() - t.departAt < RIDE_MAX_MIN * 60_000,
     [finished, now]
   );
 

@@ -94,9 +94,12 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
   // time that has already gone by, but not go further back than it.
   // After the last slot there is nothing left to post that way today.
   const pastToday = !already && nowMinutes() > LATEST;
-  // Too late for today, but a regular ride can still be set up for the days
-  // ahead, at any time in the window.
-  const planOnly = pastToday && repeat.length > 0;
+  // Today as an ISO weekday, 1 for Monday to 7 for Sunday, as in the plan.
+  const todayIso = ((new Date().getDay() + 6) % 7) + 1;
+  const notToday = repeat.length > 0 && !repeat.includes(todayIso);
+  // Too late for today, or today is not one of the days picked: a regular
+  // ride can still be set up for the days ahead, at any time in the window.
+  const planOnly = repeat.length > 0 && (pastToday || notToday);
   const tooLate = pastToday && !planOnly;
   const earliest = already
     ? Math.min(already.departMin, firstSlot(dir))
@@ -322,8 +325,10 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
       ) : planOnly ? (
         <Callout>
           <Text variant="small" tone="muted">
-            Too late for a ride {directionWords(dir)} today, so this sets up the regular ride. It is
-            posted for you from the next day you picked.
+            {pastToday
+              ? `Too late for a ride ${directionWords(dir)} today, so this sets up the regular ride.`
+              : 'Today is not one of the days you picked, so this sets up the regular ride only.'}{' '}
+            It is posted for you from the next day you picked.
           </Text>
         </Callout>
       ) : null}

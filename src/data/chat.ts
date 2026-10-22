@@ -89,7 +89,10 @@ export function useTripChat(tripId: string | undefined, meId: string | undefined
       seen.current.add(row.id);
       // Drop any optimistic copy of this message before appending the real
       // one, or the sender sees their own line twice.
-      setMessages((all) => [...all.filter((m) => !m.pending || m.body !== row.body), toMessage(row)]);
+      setMessages((all) => [
+        ...all.filter((m) => !m.pending || m.body !== row.body || m.authorId !== row.author_id),
+        toMessage(row),
+      ]);
     });
   }, [tripId]);
 

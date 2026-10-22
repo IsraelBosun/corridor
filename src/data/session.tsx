@@ -169,7 +169,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Unreadable counts as not a member: the work email screen can always
       // be passed again, a wrongly open door cannot be closed after the fact.
-      setMembership({ workEmail: null, verifiedAt: null, expiresAt: null, member: false });
+      // But only when nothing is known yet. This is read again on every
+      // token refresh, and one dropped request on bad signal must not throw
+      // a verified person out to the work email screen mid ride. Signing out
+      // clears it, so a different person never inherits it.
+      setMembership((prev) => prev ?? { workEmail: null, verifiedAt: null, expiresAt: null, member: false });
     }
   }, []);
 
@@ -182,7 +186,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setMe(row ? toPerson(row) : null);
     } catch (e) {
       setProfileError(message(e));
-      setMe(null);
+      // A profile already read stays: a failed re-read is bad signal, not a
+      // new account, and dropping it would send them to the profile screen.
+      setMe((prev) => (prev && prev.id === userId ? prev : null));
     }
   }, []);
 

@@ -176,7 +176,9 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: La
                 mySeat.status === 'cancelled'
                   ? 'Ride cancelled'
                   : mySeat.status === 'left'
-                    ? 'On your way'
+                    ? mySeat.direction === 'work' && !(me && mySeat.presentAt[me.id])
+                      ? 'Your driver is coming'
+                      : 'On your way'
                     : `Your ride ${directionWords(dir)}`
               }
             />

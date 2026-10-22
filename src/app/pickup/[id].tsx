@@ -349,8 +349,22 @@ function PickingUp({ trip }: { trip: Trip }) {
           label={toCollect.length === 0 ? `Everyone is at ${endName(trip)}` : 'End the ride'}
           kind={toCollect.length === 0 ? 'primary' : 'secondary'}
           onPress={() => {
-            finishRide(trip.id);
-            router.replace('/');
+            const end = () => {
+              finishRide(trip.id);
+              router.replace('/');
+            };
+            if (toCollect.length === 0) return end();
+            // Someone still waiting at their pickup would be left there,
+            // watching for a car that is not coming. Asked first.
+            const who = toCollect.length === 1 ? toCollect[0].name.split(' ')[0] : `${toCollect.length} riders`;
+            showDialog(
+              `End the ride without ${who}?`,
+              'They have not been picked up. Tell them in the ride chat so they can find another way to work.',
+              [
+                { text: 'Keep going', style: 'cancel' },
+                { text: 'End the ride', style: 'destructive', onPress: end },
+              ]
+            );
           }}
         />
       }>
