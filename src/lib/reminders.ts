@@ -10,6 +10,11 @@
  * through a server, they arrive with no signal, and turning them off in
  * Account cancels them on the spot. The choice is kept on this phone.
  *
+ * A driver's regular ride is posted for them, so on the days and the way it
+ * runs the "post your ride" nudge is left out. The database sends a note
+ * about that ride instead, at 06:00 or 16:00
+ * (supabase/migrations/20261024120000_regular_ride_reminders_and_12_hour.sql).
+ *
  * Expo Go on Android throws as soon as expo-notifications is imported (SDK 53
  * took it out), so the module is loaded only in a real build. In Expo Go the
  * app runs without reminders rather than not at all.
@@ -21,14 +26,15 @@ import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
-import type { Role } from '@/data/types';
+import { backend } from '@/data/backend';
+import type { Direction, Role } from '@/data/types';
 import { registerForPush } from '@/lib/push';
 
 const KEY = 'corridor.reminders';
 const CHANNEL = 'reminders';
 /** Every one of ours starts with this, morning ones included, so one sweep cancels them all. */
 const PREFIX = 'corridor-3pm-';
-/** Monday to Friday, in the trigger's numbering where 1 is Sunday. */
+/** Monday to Friday, in the trigger's numbering where 1 is Sunday (so ISO day + 1). */
 const WEEKDAYS = [2, 3, 4, 5, 6];
 
 /** True in Expo Go and on web, where these notifications cannot be used. */
@@ -75,10 +81,11 @@ function notifications(): typeof NotificationsModule | null {
 type Copy = { title: string; body: string; url: string };
 
 /** When each reminder goes, and what it says to each side. */
-const SLOTS: { id: string; hour: number; copy: Record<Role, Copy> }[] = [
+const SLOTS: { id: string; hour: number; direction: Direction; copy: Record<Role, Copy> }[] = [
   {
     id: 'am-',
     hour: 6,
+    direction: 'work',
     copy: {
       driver: {
         title: 'Driving to work this morning?',
@@ -95,6 +102,7 @@ const SLOTS: { id: string; hour: number; copy: Record<Role, Copy> }[] = [
   {
     id: '',
     hour: 15,
+    direction: 'home',
     copy: {
       driver: {
         title: 'Driving home tonight?',
@@ -103,7 +111,7 @@ const SLOTS: { id: string; hour: number; copy: Record<Role, Copy> }[] = [
       },
       passenger: {
         title: 'Heading home tonight?',
-        body: 'Rides start appearing from about 16:00. Set where you get off and watch for one going your way.',
+        body: 'Rides start appearing from about 4 PM. Set where you get off and watch for one going your way.',
         url: '/',
       },
     },
@@ -134,6 +142,19 @@ async function cancelOurs(N: typeof NotificationsModule) {
   );
 }
 
+/** "work-1": the ways and ISO weekdays a driver's running regular rides cover. */
+async function regularRideDays(): Promise<Set<string>> {
+  const covered = new Set<string>();
+  try {
+    for (const plan of await backend.listPlans()) {
+      if (plan.active) for (const day of plan.weekdays) covered.add(`${plan.direction}-${day}`);
+    }
+  } catch {
+    // Offline: every nudge, which is how it was before regular rides.
+  }
+  return covered;
+}
+
 export type SyncResult = 'scheduled' | 'off' | 'denied' | 'unavailable' | 'failed';
 
 /**
@@ -162,15 +183,17 @@ export async function syncReminders(role: Role, askPermission = true): Promise<S
     if (Platform.OS === 'android') {
       await N.setNotificationChannelAsync(CHANNEL, {
         name: 'Ride reminders',
-        description: 'A nudge at 06:00 and 15:00 on weekdays to post or look for a ride.',
+        description: 'A nudge at 6 AM and 3 PM on weekdays to post or look for a ride.',
         importance: N.AndroidImportance.DEFAULT,
       });
     }
 
+    const covered = role === 'driver' ? await regularRideDays() : new Set<string>();
+
     await cancelOurs(N);
     await Promise.all(
       SLOTS.flatMap((slot) =>
-        WEEKDAYS.map((weekday) => {
+        WEEKDAYS.filter((weekday) => !covered.has(`${slot.direction}-${weekday - 1}`)).map((weekday) => {
           const copy = slot.copy[role];
           return N.scheduleNotificationAsync({
             identifier: `${PREFIX}${slot.id}${weekday}`,

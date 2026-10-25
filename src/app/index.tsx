@@ -11,7 +11,7 @@ import type { LngLat } from '@/lib/mapbox';
 import { naira } from '@/lib/config';
 import { askForLocation, useLocationAccess, useMyLocation } from '@/lib/location';
 import { NEAR_PICKUP_M, pickupMetres } from '@/lib/nearby';
-import { hhmm, untilHeading, untilShort, useNow } from '@/lib/time';
+import { clock, untilHeading, untilShort, useNow } from '@/lib/time';
 import { useReminders } from '@/lib/reminders';
 import type { LivePoint } from '@/lib/live';
 import { Text } from '@/ui/text';
@@ -177,7 +177,7 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: La
                   ? 'Ride cancelled'
                   : mySeat.status === 'left'
                     ? mySeat.direction === 'work' && !(me && mySeat.presentAt[me.id])
-                      ? 'Your driver is coming'
+                      ? 'Your car owner is coming'
                       : 'On your way'
                     : `Your ride ${directionWords(dir)}`
               }
@@ -416,8 +416,8 @@ function Browse({
         <Text variant="heading">No rides posted yet</Text>
         <Text variant="small" tone="muted" style={s.emptyBody}>
           {home
-            ? 'Rides home usually start appearing from about 16:00.'
-            : 'Rides to work are posted the same morning, from about 05:30.'}{' '}
+            ? 'Rides home usually start appearing from about 4 PM.'
+            : 'Rides to work are posted the same morning, from about 5:30 AM.'}{' '}
           This list updates on its own.
         </Text>
       </View>
@@ -491,7 +491,7 @@ function Browse({
       <Text variant="small" tone="muted" center style={s.foot}>
         {home
           ? 'Most people book close to when they stand up to leave.'
-          : 'The driver picks you up on the way, near where you set your pickup.'}
+          : 'The car owner picks you up on the way, near where you set your pickup.'}
       </Text>
     </>
   );
@@ -537,7 +537,7 @@ function MyRide({ trip, now, car }: { trip: Trip; now: number; car: LivePoint | 
         <CarLine trip={trip} car={car} />
         <Button label="I am in the car" kind="go" onPress={() => me && markPresent(trip.id, me.id)} />
         <Button
-          label="Message driver and riders"
+          label="Message car owner and riders"
           kind="secondary"
           onPress={() => router.push({ pathname: '/chat/[id]', params: { id: trip.id } })}
         />
@@ -586,7 +586,7 @@ function MyRide({ trip, now, car }: { trip: Trip; now: number; car: LivePoint | 
           onPress={() => finishRide(trip.id)}
         />
         <Button
-          label="Message driver and riders"
+          label="Message car owner and riders"
           kind="secondary"
           onPress={() => router.push({ pathname: '/chat/[id]', params: { id: trip.id } })}
         />
@@ -603,8 +603,8 @@ function MyRide({ trip, now, car }: { trip: Trip; now: number; car: LivePoint | 
         </Text>
         <Text variant="small" tone="muted">
           {work
-            ? `Leaves ${start} at ${hhmm(trip.departMin)}, give or take ${trip.toleranceMin} min, and picks you up near ${dropOffName} on the way`
-            : `Leaves ${hhmm(trip.departMin)}, give or take ${trip.toleranceMin} min, from ${start}`}
+            ? `Leaves ${start} at ${clock(trip.departMin)}, give or take ${trip.toleranceMin} min, and picks you up near ${dropOffName} on the way`
+            : `Leaves ${clock(trip.departMin)}, give or take ${trip.toleranceMin} min, from ${start}`}
         </Text>
         {trip.contributionNaira ? (
           <Text variant="small" tone="ink" style={s.link}>
@@ -637,7 +637,7 @@ function MyRide({ trip, now, car }: { trip: Trip; now: number; car: LivePoint | 
         <Button label={`I am at ${start}`} kind="go" onPress={() => me && markPresent(trip.id, me.id)} />
       )}
       <Button
-        label="Message driver and riders"
+        label="Message car owner and riders"
         kind="secondary"
         onPress={() => router.push({ pathname: '/chat/[id]', params: { id: trip.id } })}
       />
@@ -656,7 +656,7 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
   const face = trip.riders.length > 2 ? 34 : 44;
 
   const stats = [
-    { label: 'Leaving', value: hhmm(trip.departMin) },
+    { label: 'Leaving', value: clock(trip.departMin) },
     { label: 'Window', value: `±${trip.toleranceMin} min` },
     { label: 'In', value: untilShort(trip.departMin, now) },
   ];

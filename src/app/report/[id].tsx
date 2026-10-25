@@ -129,7 +129,7 @@ export default function ReportScreen() {
                   {p.name}
                 </Text>
                 <Text variant="small" tone="muted">
-                  {pid === trip.driverId ? 'Driver' : 'Rider'}
+                  {pid === trip.driverId ? 'Car owner' : 'Rider'}
                 </Text>
               </View>
             </Choice>

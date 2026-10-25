@@ -93,7 +93,7 @@ export default function ProfileSetupScreen() {
 
       {/*
         Asked once here rather than every evening on the corridor screen. It is
-        not a permission: a driver can still take somebody's spare seat and a
+        not a permission: a car owner can still take somebody's spare seat and a
         passenger who borrows a car can still post. It only decides what the
         app puts in front of you first.
       */}

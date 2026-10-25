@@ -97,12 +97,12 @@ export function LocalAccounts() {
 
       {accounts.length === 0 ? (
         <Text variant="small" tone="muted" style={s.none}>
-          No test accounts yet. Make a driver and a passenger below.
+          No test accounts yet. Make a car owner and a passenger below.
         </Text>
       ) : null}
 
       {[
-        { title: 'Drivers', list: drivers },
+        { title: 'Car owners', list: drivers },
         { title: 'Passengers', list: passengers },
       ].map((group) =>
         group.list.length > 0 ? (
@@ -159,7 +159,7 @@ export function LocalAccounts() {
               accessibilityState={{ selected: on }}
               style={[s.segmentItem, on && s.segmentOn]}>
               <Text variant="body" tone={on ? 'ink' : 'muted'} style={s.bold}>
-                {r === 'passenger' ? 'Passenger' : 'Driver'}
+                {r === 'passenger' ? 'Passenger' : 'Car owner'}
               </Text>
             </Pressable>
           );

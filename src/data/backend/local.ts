@@ -466,7 +466,7 @@ export const localBackend: Backend = {
   async createTrip(driverId, fields) {
     const me = await requireUser();
     if (me !== driverId) throw new Error('You can only post your own ride.');
-    if ((await roleOf(me)) !== 'driver') throw new Error('Only drivers can post a ride. Switch to driving in your account.');
+    if ((await roleOf(me)) !== 'driver') throw new Error('Only car owners can post a ride. Switch to driving in your account.');
     checkFields(fields);
     const d = await db();
     await needPayoutIfPaid(d, me, fields);
@@ -556,7 +556,7 @@ export const localBackend: Backend = {
   async reserveSeat(tripId) {
     const me = await requireUser();
     if ((await roleOf(me)) !== 'passenger') {
-      throw new Error('Drivers do not take seats. Switch to riding in your account.');
+      throw new Error('Car owners do not take seats. Switch to riding in your account.');
     }
     const d = await db();
     let ok = false;
@@ -604,7 +604,7 @@ export const localBackend: Backend = {
     const d = await db();
     const trip = await d.getFirstAsync<{ driver_id: string }>('SELECT driver_id FROM trips WHERE id = ?', tripId);
     // The rider taps themselves in, or the driver taps them in from the grid.
-    if (me !== riderId && trip?.driver_id !== me) throw new Error('Only the rider or the driver can do that.');
+    if (me !== riderId && trip?.driver_id !== me) throw new Error('Only the rider or the car owner can do that.');
     await d.runAsync('UPDATE reservations SET present_at = ? WHERE trip_id = ? AND rider_id = ?', at, tripId, riderId);
     tripsChanged();
   },
@@ -678,10 +678,12 @@ export const localBackend: Backend = {
   },
 
   async createPlan() {
-    throw new Error('Regular rides need the hosted backend. Post this one as a single ride.');
+    throw new Error('Weekly rides need the hosted backend. Post this one as a single ride.');
   },
 
   async setPlanActive() {},
+
+  async updatePlan() {},
 
   async deletePlan() {},
 

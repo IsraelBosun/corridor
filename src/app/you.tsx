@@ -1,10 +1,20 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Switch,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { backend, USING_LOCAL } from '@/data/backend';
 import { usePayout } from '@/data/payout';
-import { daysText, usePlans, type Plan } from '@/data/plans';
+import { daysText, usePlans } from '@/data/plans';
 import { useSession } from '@/data/session';
 import { useStore } from '@/data/store';
 import { useLastOrigin } from '@/lib/origin';
@@ -23,7 +33,7 @@ import {
   ShieldIcon,
   SignOutIcon,
 } from '@/ui/icons';
-import { Avatar, Callout, Screen, SectionTitle, TileRow } from '@/ui/primitives';
+import { Avatar, Button, Callout, Screen, SectionTitle, TileRow } from '@/ui/primitives';
 import { BankPicker } from '@/ui/bank-picker';
 import { showDialog } from '@/ui/dialog';
 import { useStatusBand } from '@/ui/status-band';
@@ -101,6 +111,17 @@ export default function YouScreen() {
     );
   }
 
+  // Second step of deleting: typing the login email, so one stray tap on the
+  // dialog never deletes anyone.
+  const [typingEmail, setTypingEmail] = useState(false);
+
+  async function runDelete() {
+    setError(null);
+    const result = await deleteAccount();
+    if (!result.ok) setError(result.error);
+    return result.ok;
+  }
+
   function confirmDelete() {
     showDialog(
       'Delete your Corridor account?',
@@ -110,10 +131,10 @@ export default function YouScreen() {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
-            setError(null);
-            const result = await deleteAccount();
-            if (!result.ok) setError(result.error);
+          // Test accounts have no email to type.
+          onPress: () => {
+            if (email) setTypingEmail(true);
+            else runDelete();
           },
         },
       ],
@@ -165,7 +186,7 @@ export default function YouScreen() {
 
       {driver ? (
         <>
-          <SectionTitle>Regular rides</SectionTitle>
+          <SectionTitle>Weekly rides</SectionTitle>
           <RegularRides />
           <SectionTitle>Your car</SectionTitle>
           <CarField />
@@ -229,13 +250,91 @@ export default function YouScreen() {
       </View>
 
       <Text variant="small" tone="faint" style={s.foot}>
-        A notice board between verified commuters, not a transport service. Drivers and vehicles are not
-        vetted. Corridor never handles money: a fuel contribution, when a driver asks for one, goes
-        straight from rider to driver. We keep your name, your work address, one usual place, a private
-        record of the rides you take and what you do in Corridor, and the route of each ride while it is on
-        the road, for safety. Routes are deleted after 90 days. Nobody else in Corridor sees any of it.
+        Corridor connects verified colleagues. It is not a transport service. Fuel contributions go
+        straight from rider to car owner. For safety, we keep a private record of your
+        rides, and each route for 90 days.
       </Text>
+
+      {email ? (
+        <DeleteByEmail
+          visible={typingEmail}
+          email={email}
+          onCancel={() => setTypingEmail(false)}
+          onDelete={async () => {
+            const ok = await runDelete();
+            if (!ok) setTypingEmail(false);
+          }}
+        />
+      ) : null}
     </Screen>
+  );
+}
+
+/**
+ * The last step before an account is deleted: type the login email. It is
+ * shown as a hint; the point is a deliberate act, not a memory test. Case
+ * and stray spaces do not matter.
+ */
+function DeleteByEmail({
+  visible,
+  email,
+  onCancel,
+  onDelete,
+}: {
+  visible: boolean;
+  email: string;
+  onCancel: () => void;
+  onDelete: () => Promise<void>;
+}) {
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const matches = typed.trim().toLowerCase() === email.trim().toLowerCase();
+
+  function cancel() {
+    setTyped('');
+    onCancel();
+  }
+
+  async function remove() {
+    if (!matches || busy) return;
+    setBusy(true);
+    await onDelete();
+    setBusy(false);
+    setTyped('');
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={cancel}>
+      <KeyboardAvoidingView style={s.deleteBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={s.deleteCard}>
+          <Text variant="title">Type your email to delete</Text>
+          <Text variant="small" tone="muted">
+            To confirm, type the email you sign in with: {email}. This cannot be undone.
+          </Text>
+          <View style={[s.inputWrap, typed && !matches ? s.inputError : null]}>
+            <TextInput
+              value={typed}
+              onChangeText={setTyped}
+              style={s.input}
+              placeholder={email}
+              placeholderTextColor={color.inkFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              keyboardType="email-address"
+              accessibilityLabel="Your email address, to confirm deleting your account"
+            />
+          </View>
+          <Button
+            label={busy ? 'Deleting' : 'Delete for good'}
+            kind="danger"
+            disabled={!matches || busy}
+            onPress={remove}
+          />
+          <Button label="Keep my account" kind="secondary" disabled={busy} onPress={cancel} />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 
@@ -267,7 +366,7 @@ function Profile({
         <View style={s.chips}>
           <View style={s.chip}>
             <Text variant="small" style={s.chipText}>
-              {driver ? 'Driver' : 'Rider'}
+              {driver ? 'Car owner' : 'Rider'}
             </Text>
           </View>
           {member ? (
@@ -348,7 +447,7 @@ function Commute({ driver }: { driver: boolean }) {
   // A driver's last starting point, from this phone. A rider starts wherever
   // their driver does, so there is nothing of theirs to show.
   const lastOrigin = useLastOrigin();
-  const from = driver ? (lastOrigin?.name ?? 'Set when you offer a ride') : 'Wherever your driver starts';
+  const from = driver ? (lastOrigin?.name ?? 'Set when you offer a ride') : 'Wherever your car owner starts';
   const set = Boolean(dropOff?.name);
 
   return (
@@ -386,11 +485,6 @@ function Commute({ driver }: { driver: boolean }) {
           </Text>
         </View>
       </Pressable>
-      <Text variant="small" tone="faint" style={s.under}>
-        {driver
-          ? 'Tap to change where you usually head home. It is filled in each time you offer a ride (as the start of a ride to work), and you can change either end on any one ride.'
-          : 'Where you get off on the way home, and where you are picked up on the way to work. Rides whose road passes close to it come first.'}
-      </Text>
     </>
   );
 }
@@ -481,7 +575,7 @@ const MODE_LABEL: Record<ThemeMode, string> = { light: 'Light', dark: 'Dark', sy
 
 /** Light, dark, or follow the phone. Kept on this phone only. */
 /**
- * The 15:00 weekday nudge, on or off. If the phone has notifications blocked
+ * The 6 AM and 3 PM weekday nudges, on or off. If the phone has notifications blocked
  * for Corridor, say so and offer the way to the phone's settings, since the
  * app cannot ask a second time.
  */
@@ -508,11 +602,11 @@ function Reminders({ driver }: { driver: boolean }) {
       <View style={s.cardHead}>
         <View style={s.flex}>
           <Text variant="body" style={s.strong}>
-            Weekday nudges at 06:00 and 15:00
+            Weekday nudges at 6 AM and 3 PM
           </Text>
           <Text variant="small" tone="muted">
             {driver
-              ? 'A reminder to post your ride to work, and your ride home.'
+              ? 'A reminder to post your ride to work, and your ride home. On the days your weekly ride runs, a note at 6 AM or 4 PM with its time instead.'
               : 'A reminder to look for a ride to work, and a ride home.'}
           </Text>
         </View>
@@ -524,7 +618,7 @@ function Reminders({ driver }: { driver: boolean }) {
             onValueChange={toggle}
             trackColor={{ false: color.lineStrong, true: color.brand }}
             thumbColor={color.surface}
-            accessibilityLabel="Weekday reminders at 06:00 and 15:00"
+            accessibilityLabel="Weekday reminders at 6 AM and 3 PM"
           />
         )}
       </View>
@@ -546,32 +640,32 @@ function Reminders({ driver }: { driver: boolean }) {
   );
 }
 
-/** The driver's regular rides: when, which days, and the way to pause or remove each. */
+/**
+ * The driver's regular rides, one each way at most: when, which days, and
+ * the route, in full. Tapping one opens it to change, pause or delete.
+ */
 function RegularRides() {
+  const router = useRouter();
   const { me } = useStore();
-  const { plans, loading, failed, setActive, remove, reload } = usePlans(me?.id);
+  const { plans, loading, failed, reload } = usePlans(me?.id);
 
-  function confirmRemove(p: Plan) {
-    showDialog(
-      'Stop this regular ride?',
-      'No more rides are posted from it. A ride it already posted today stays, and you can cancel that one on its own.',
-      [
-        { text: 'Keep it', style: 'cancel' },
-        { text: 'Stop it', style: 'destructive', onPress: () => remove(p.id) },
-      ]
-    );
-  }
+  // Back from changing one: show what was saved.
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload])
+  );
 
   return (
     <View style={s.card}>
-      {loading ? (
+      {loading && plans.length === 0 ? (
         <Text variant="small" tone="muted">
           Loading
         </Text>
       ) : failed ? (
         <Pressable onPress={reload} accessibilityRole="button">
           <Text variant="small" tone="muted">
-            Could not load your regular rides. Tap to try again.
+            Could not load your weekly rides. Tap to try again.
           </Text>
         </Pressable>
       ) : plans.length === 0 ? (
@@ -581,27 +675,25 @@ function RegularRides() {
         </Text>
       ) : (
         plans.map((p, i) => (
-          <View key={p.id} style={[s.plan, i > 0 && s.planGap]}>
+          <Pressable
+            key={p.id}
+            onPress={() => router.push({ pathname: '/plan/[id]', params: { id: p.id } })}
+            accessibilityRole="button"
+            style={({ pressed }) => [s.plan, i > 0 && s.planGap, pressed && s.pressed]}>
             <View style={s.flex}>
               <Text variant="body" style={s.strong}>
                 {p.direction === 'work' ? 'To work' : 'Home'} at {p.time}
-                {p.active ? '' : ', paused'}
               </Text>
-              <Text variant="small" tone="muted" numberOfLines={2}>
-                Every {daysText(p.weekdays)}. {p.from} to {p.to}
+              <Text variant="small" tone="muted">
+                Every {daysText(p.weekdays)}
+                {p.active ? '' : '. Paused'}
+              </Text>
+              <Text variant="small" tone="faint">
+                {p.from} to {p.to}
               </Text>
             </View>
-            <Pressable onPress={() => setActive(p.id, !p.active)} accessibilityRole="button" hitSlop={6}>
-              <Text variant="small" tone="brand" style={s.strong}>
-                {p.active ? 'Pause' : 'Resume'}
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => confirmRemove(p)} accessibilityRole="button" hitSlop={6}>
-              <Text variant="small" tone="stop" style={s.strong}>
-                Stop
-              </Text>
-            </Pressable>
-          </View>
+            <ChevronIcon tint={color.inkMuted} />
+          </Pressable>
         ))
       )}
     </View>
@@ -640,7 +732,7 @@ function AreaRides() {
           </Text>
           <Text variant="small" tone="muted">
             A push when a ride passing your place is posted. At most one each way a day, never
-            between 22:00 and 06:00.
+            between 10 PM and 6 AM.
           </Text>
         </View>
         {on === null ? (
@@ -1131,6 +1223,20 @@ const s = themed(() =>
     groupRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.lg },
     groupLine: { height: 1, backgroundColor: color.line },
 
-    foot: { marginTop: space.xl, textAlign: 'center', paddingHorizontal: space.md },
+    foot: { marginTop: space.xl, textAlign: 'justify', paddingHorizontal: space.md },
+
+    // Delete, typing the email
+    deleteBackdrop: {
+      flex: 1,
+      justifyContent: 'center',
+      padding: GUTTER,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    deleteCard: {
+      gap: space.md,
+      backgroundColor: color.surface,
+      borderRadius: radius.xl,
+      padding: space.xl,
+    },
   })
 );

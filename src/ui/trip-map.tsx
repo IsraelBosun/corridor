@@ -7,7 +7,7 @@ import { useRoad } from '@/lib/directions';
 import { useMyLocation } from '@/lib/location';
 import type { LngLat } from '@/lib/mapbox';
 import { openDirections } from '@/lib/navigate';
-import { hhmm } from '@/lib/time';
+import { clock } from '@/lib/time';
 import { color, elevation, radius, space, themed } from '@/theme/tokens';
 import { showDialog } from './dialog';
 import { ChevronIcon } from './icons';
@@ -335,11 +335,11 @@ export function RidesMap({
         <Pressable
           onPress={() => onOpen(current.id)}
           accessibilityRole="button"
-          accessibilityLabel={`Ride leaving ${hhmm(current.departMin)} to ${endName(current)}. See this ride`}
+          accessibilityLabel={`Ride leaving ${clock(current.departMin)} to ${endName(current)}. See this ride`}
           style={({ pressed }) => [c.card, { bottom: controlsBottom }, pressed && c.pressed]}>
           <View style={c.flex}>
             <Text variant="heading" numberOfLines={1}>
-              {hhmm(current.departMin)} to {endName(current)}
+              {clock(current.departMin)} to {endName(current)}
             </Text>
             <Text variant="small" tone="muted" numberOfLines={1}>
               {left === 0 ? 'Full' : `${left} ${left === 1 ? 'seat' : 'seats'} left`}

@@ -101,7 +101,7 @@ export function LiveNotice({ trip }: { trip: Trip }) {
   if (!sharing || sharing.trip.id !== trip.id) return null;
   const who = sharing.driving
     ? 'Riders on this ride see where your car is'
-    : 'Your driver sees where you are';
+    : 'Your car owner sees where you are';
   const until = sharing.driving ? 'until the ride is over' : 'until you are in the car';
   return (
     <View style={[s.notice, off && s.noticeOff]}>

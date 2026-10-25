@@ -4,7 +4,7 @@ import { endName, seatsOpen, startName, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { distanceText } from '@/lib/nearby';
-import { hhmm, untilText, type Minutes } from '@/lib/time';
+import { clock, untilText, type Minutes } from '@/lib/time';
 import { color, elevation, radius, space, themed } from '@/theme/tokens';
 import { ClockIcon } from './icons';
 import { Avatar, Button } from './primitives';
@@ -57,7 +57,7 @@ export function TripRow({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${driver.name.split(' ')[0]}, to ${endName(trip)}. ${from}. Leaves ${hhmm(trip.departMin)}, give or take ${trip.toleranceMin} minutes. ${seats}. ${trip.contributionNaira ? `${price} fuel contribution` : 'Free ride'}.`}
+      accessibilityLabel={`${driver.name.split(' ')[0]}, to ${endName(trip)}. ${from}. Leaves ${clock(trip.departMin)}, give or take ${trip.toleranceMin} minutes. ${seats}. ${trip.contributionNaira ? `${price} fuel contribution` : 'Free ride'}.`}
       style={({ pressed }) => [s.card, dim && s.dim, pressed && s.pressed]}>
       <View style={s.top}>
         <Avatar initials={driver.initials} size={48} />
@@ -75,7 +75,7 @@ export function TripRow({
         </View>
         <View style={s.time}>
           <Text variant="dataLarge" tone={open === 0 ? 'faint' : 'ink'} style={s.timeText}>
-            {hhmm(trip.departMin)}
+            {clock(trip.departMin)}
           </Text>
           <Text variant="small" tone="muted" style={s.tolerance}>
             ±{trip.toleranceMin} min

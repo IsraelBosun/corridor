@@ -10,7 +10,7 @@ import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { useMyLocation } from '@/lib/location';
 import { NEAR_PICKUP_M, pickupMetres } from '@/lib/nearby';
-import { hhmm, untilHeading, useNow } from '@/lib/time';
+import { clock, untilHeading, useNow } from '@/lib/time';
 import { color, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, BackIcon, CarIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
@@ -67,7 +67,7 @@ export default function TripScreen() {
           <>
             <Text variant="title">This ride is gone.</Text>
             <Text variant="body" tone="muted" style={s.gap}>
-              The driver took it down. Other rides are on the map.
+              The car owner took it down. Other rides are on the map.
             </Text>
           </>
         )}
@@ -162,14 +162,14 @@ export default function TripScreen() {
             <>
               <Text variant="title">On the way</Text>
               <Text variant="body" tone="muted" style={s.sub}>
-                Set off from {start}. It was due at {hhmm(trip.departMin)}.
+                Set off from {start}. It was due at {clock(trip.departMin)}.
               </Text>
             </>
           ) : (
             <>
               <Text variant="title">{untilHeading(trip.departMin, now)}</Text>
               <Text variant="body" tone="muted" style={s.sub}>
-                {work ? 'To work. ' : ''}Leaves {hhmm(trip.departMin)}, give or take {trip.toleranceMin} min
+                {work ? 'To work. ' : ''}Leaves {clock(trip.departMin)}, give or take {trip.toleranceMin} min
               </Text>
             </>
           )}
@@ -189,7 +189,7 @@ export default function TripScreen() {
 
           {/* The route, as a ride hailing app shows it: from, via, to. */}
           <View style={s.route}>
-            <RouteStop kind="start" title={start} note={work ? 'Where the driver sets off' : 'Pickup'} />
+            <RouteStop kind="start" title={start} note={work ? 'Where the car owner sets off' : 'Pickup'} />
             {passes ? (
               <RouteStop
                 kind="mine"
@@ -200,7 +200,7 @@ export default function TripScreen() {
             <RouteStop
               kind="end"
               title={endName(trip)}
-              note="Where the driver is going"
+              note="Where the car owner is going"
               last
             />
           </View>
@@ -291,7 +291,7 @@ export default function TripScreen() {
             <Row
               icon={<AlertIcon />}
               title="Report a problem"
-              subtitle="About the driver, a rider, or the ride. Nobody is told who reported."
+              subtitle="About the car owner, a rider, or the ride. Nobody is told who reported."
               onPress={() => router.push({ pathname: '/report/[id]', params: { id: trip.id } })}
               tone="stop"
               last
@@ -299,7 +299,8 @@ export default function TripScreen() {
           ) : null}
 
           <Text variant="small" tone="faint" style={s.foot}>
-            Drivers and vehicles are not vetted. You travel at your own risk.
+            Corridor connects verified colleagues but does not inspect cars. Ride with people you are
+            comfortable with.
           </Text>
         </ScrollView>
 
@@ -338,7 +339,7 @@ export default function TripScreen() {
                 <View style={s.checked}>
                   <CheckIcon />
                   <Text variant="body" tone="go" style={s.bold}>
-                    Checked in at {start}, {hhmm(trip.presentAt[me!.id])}
+                    Checked in at {start}, {clock(trip.presentAt[me!.id])}
                   </Text>
                 </View>
               ) : (
@@ -365,7 +366,7 @@ export default function TripScreen() {
             </>
           ) : role === 'driver' ? (
             <Text variant="small" tone="muted" center style={s.driverNote}>
-              You are signed up as a driver. To take a seat instead, switch to
+              You are signed up as a car owner. To take a seat instead, switch to
               riding in your account.
             </Text>
           ) : (
@@ -462,7 +463,7 @@ function CancelledTrip({ trip }: { trip: Trip }) {
       <Callout tone="stop" icon={<AlertIcon />}>
         <Text variant="body" tone="stop" style={s.bold}>
           {person(trip.driverId).name.split(' ')[0]} cancelled
-          {trip.cancelledAtMin ? ` at ${hhmm(trip.cancelledAtMin)}` : ''}
+          {trip.cancelledAtMin ? ` at ${clock(trip.cancelledAtMin)}` : ''}
         </Text>
         {minsBefore > 0 ? (
           <Text variant="small" tone="muted">

@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTripChat } from '@/data/chat';
 import { useStore, useTrip } from '@/data/store';
 import { setOpenChat } from '@/lib/reminders';
-import { hhmm } from '@/lib/time';
+import { clock } from '@/lib/time';
 import { color, font, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ArrowIcon, LockIcon } from '@/ui/icons';
 import { Avatar, Callout, ScreenHeader } from '@/ui/primitives';
@@ -83,7 +83,7 @@ export default function ChatScreen() {
           <ScreenHeader eyebrow={`Trip ${trip.code}`} />
           <Text variant="title">Not your chat.</Text>
           <Text variant="body" tone="muted" style={s.gap}>
-            A trip chat is only the driver and the people holding a seat. Take a
+            A trip chat is only the car owner and the people holding a seat. Take a
             seat on this trip and it opens.
           </Text>
         </View>
@@ -135,7 +135,7 @@ export default function ChatScreen() {
                   {!mine ? (
                     <Text variant="small" tone="faint" style={s.who}>
                       {who.name.split(' ')[0]}
-                      {trip.driverId === m.authorId ? ', driving' : ''}
+                      {trip.driverId === m.authorId ? ', car owner' : ''}
                     </Text>
                   ) : null}
                   <Text variant="body" tone={mine ? 'onInk' : 'ink'}>
@@ -145,7 +145,7 @@ export default function ChatScreen() {
                     variant="small"
                     tone={mine ? 'onInk' : 'faint'}
                     style={[s.time, m.pending ? s.pending : null]}>
-                    {m.pending ? 'sending' : hhmm(m.atMin)}
+                    {m.pending ? 'sending' : clock(m.atMin)}
                   </Text>
                 </View>
               </View>

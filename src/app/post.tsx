@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { usePayout } from '@/data/payout';
-import { daysText } from '@/data/plans';
+import { daysText, usePlans } from '@/data/plans';
 import { directionNow, directionWords, useStore } from '@/data/store';
 import type { Destination, Direction } from '@/data/types';
 import type { Place } from '@/lib/places';
@@ -17,14 +17,17 @@ import {
 } from '@/lib/config';
 import { loadLastOrigin, saveLastOrigin } from '@/lib/origin';
 import { hasPhone, noPhones } from '@/lib/phones';
-import { hhmm, nowMinutes } from '@/lib/time';
+import { syncReminders } from '@/lib/reminders';
+import { clock, nowMinutes } from '@/lib/time';
 import { color, font, LIME, PINE, radius, space, themed } from '@/theme/tokens';
+import { DayPicker } from '@/ui/day-picker';
 import { AlertIcon, CarIcon, ChevronIcon, PinIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
 import { Button, Callout, Field, Screen, ScreenHeader, TileRow } from '@/ui/primitives';
 import { PlaceSearch } from '@/ui/place-search';
 import { StatusBand } from '@/ui/status-band';
 import { Text } from '@/ui/text';
+import { TimePicker } from '@/ui/time-picker';
 import { TripMap } from '@/ui/trip-map';
 
 const TOLERANCES = [15, 30, 45] as const;
@@ -80,11 +83,18 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
   // A driver has one live ride each way, and the database enforces that.
   // Choosing a way that already has one offers to edit it instead.
   const existing = already ? undefined : myTripFor(dir);
+  // One regular ride each way, and the database insists. With one already,
+  // Repeat points to it instead of offering a second.
+  const { plans } = usePlans(already ? undefined : me?.id);
+  const planThatWay = plans.find((p) => p.direction === dir);
 
   const [posting, setPosting] = useState(false);
   const [departMin, setDepartMin] = useState(already?.departMin ?? nextSlot(dir));
   // Weekdays to post this ride again on, for a new ride. None is a one off.
-  const [repeat, setRepeat] = useState<number[]>([]);
+  const [picked, setRepeat] = useState<number[]>([]);
+  // A second regular ride the same way is never offered, so days picked
+  // before the first one loaded do not count.
+  const repeat = planThatWay ? [] : picked;
   const [toleranceMin, setToleranceMin] = useState<number>(already?.toleranceMin ?? 15);
   // Seats already taken cannot be taken away by an edit.
   const booked = already?.riders.length ?? 0;
@@ -206,6 +216,8 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
     // update, never a second row.
     const ok = already ? await editTrip(already.id, draft) : Boolean(await postTrip(draft, repeat, !planOnly));
     setPosting(false);
+    // The phone's own nudges skip the days a regular ride now covers.
+    if (ok && repeat.length > 0) syncReminders('driver', false).catch(() => {});
     // The office end is what is worth remembering: where an evening ride
     // starts, and where a morning ride ends.
     const officeEnd = dir === 'home' ? origin : destination;
@@ -264,21 +276,23 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
               </Text>
             </Callout>
           ) : null}
-          <Button
-            label={
-              posting
-                ? 'Saving'
-                : already
-                  ? 'Save changes'
-                  : planOnly
-                    ? 'Set up regular ride'
-                    : home
-                      ? 'Post ride home'
-                      : 'Post ride to work'
-            }
-            onPress={submit}
-            disabled={posting || !routeReady || tooLate || needsBank || notePhone || Boolean(existing)}
-          />
+          {existing ? null : (
+            <Button
+              label={
+                posting
+                  ? 'Saving'
+                  : already
+                    ? 'Save changes'
+                    : planOnly
+                      ? 'Set up weekly ride'
+                      : home
+                        ? 'Post ride home'
+                        : 'Post ride to work'
+              }
+              onPress={submit}
+              disabled={posting || !routeReady || tooLate || needsBank || notePhone}
+            />
+          )}
           {already ? (
             <Button label="Cancel this ride" kind="danger" disabled={posting} onPress={cancelRide} />
           ) : null}
@@ -304,11 +318,13 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
       {existing ? (
         <Callout icon={<AlertIcon />}>
           <Text variant="small" tone="muted">
-            You already have a ride {directionWords(dir)} posted for {hhmm(existing.departMin)}. You
-            can have one each way.
+            {existing.planId
+              ? `Your weekly ride ${directionWords(dir)} is already posted for today, leaving at ${clock(existing.departMin)}.`
+              : `You already have a ride ${directionWords(dir)} posted for ${clock(existing.departMin)}.`}{' '}
+            You can change anything for today, or cancel just today.
           </Text>
           <Button
-            label="Edit that ride"
+            label={existing.planId ? "Edit today's ride" : 'Edit that ride'}
             kind="secondary"
             onPress={() => router.replace({ pathname: '/post', params: { id: existing.id } })}
           />
@@ -317,17 +333,17 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
         <Callout icon={<AlertIcon />}>
           <Text variant="small" tone="muted">
             {home
-              ? `Rides home can leave up to ${hhmm(LATEST)}, so tonight is over. Come back tomorrow afternoon to post.`
-              : `Rides to work can leave up to ${hhmm(LATEST)}, so this morning is over. Post tomorrow morning from ${hhmm(MORNING_START_MIN)}, or offer a ride home.`}{' '}
-            To set up a regular ride for the days ahead, pick them under Repeat.
+              ? `Rides home can leave up to ${clock(LATEST)}, so tonight is over. Come back tomorrow afternoon to post.`
+              : `Rides to work can leave up to ${clock(LATEST)}, so this morning is over. Post tomorrow morning from ${clock(MORNING_START_MIN)}, or offer a ride home.`}{' '}
+            To set up a weekly ride for the days ahead, pick them under Repeat.
           </Text>
         </Callout>
       ) : planOnly ? (
         <Callout>
           <Text variant="small" tone="muted">
             {pastToday
-              ? `Too late for a ride ${directionWords(dir)} today, so this sets up the regular ride.`
-              : 'Today is not one of the days you picked, so this sets up the regular ride only.'}{' '}
+              ? `Too late for a ride ${directionWords(dir)} today, so this sets up the weekly ride.`
+              : 'Today is not one of the days you picked, so this sets up the weekly ride only.'}{' '}
             It is posted for you from the next day you picked.
           </Text>
         </Callout>
@@ -336,8 +352,8 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
       {already?.planId ? (
         <Callout>
           <Text variant="small" tone="muted">
-            One of your regular rides. Changes here are for today only. To change the days, or stop
-            it, go to Regular rides in your account.
+            One of your weekly rides. Changes here are for today only. To change the days, or stop
+            it, go to Weekly rides in your account.
           </Text>
         </Callout>
       ) : null}
@@ -351,196 +367,194 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
         </Callout>
       ) : null}
 
-      {/*
-        Always shown. Before anything is picked it sits on the phone's own
-        position; picking both ends draws the road.
-      */}
-      <View style={s.map}>
-        <TripMap origin={origin} destination={destination} padding={{ top: 40, bottom: 24, left: 36, right: 36 }} />
-      </View>
-
-      <Field
-        label="Starting from"
-        hint={
-          home
-            ? 'Riders meet you here. Be as exact as the gate or the car park.'
-            : 'Where you set off. Riders are picked up along your road, near where they live.'
-        }>
-        <Pressable
-          onPress={() => setSearching('from')}
-          accessibilityRole="button"
-          accessibilityLabel="Where are you starting from"
-          style={({ pressed }) => [s.dest, pressed && s.pressed]}>
-          <View style={[s.destPin, s.fromPin]}>
-            <View style={s.fromDot} />
+      {existing ? null : (
+        <>
+          {/*
+            Always shown. Before anything is picked it sits on the phone's own
+            position; picking both ends draws the road.
+          */}
+          <View style={s.map}>
+            <TripMap origin={origin} destination={destination} padding={{ top: 40, bottom: 24, left: 36, right: 36 }} />
           </View>
-          <Text
-            variant={origin ? 'heading' : 'body'}
-            tone={origin ? 'ink' : 'faint'}
-            numberOfLines={1}
-            style={s.flex}>
-            {origin?.name ?? (home ? 'Search where riders meet you' : 'Search your estate or street')}
-          </Text>
-          <ChevronIcon tint={color.inkMuted} />
-        </Pressable>
-      </Field>
 
-      <Field
-        label="Heading to"
-        hint={
-          home && usual && destination?.name === usual.name
-            ? 'Your usual destination from Account. Change it here for tonight only.'
-            : home
-              ? 'Riders dropping off along your road will see this ride.'
-              : 'Where you work. Riders picked up along your road, and going there, will see this ride.'
-        }>
-        <Pressable
-          onPress={() => setSearching('to')}
-          accessibilityRole="button"
-          accessibilityLabel="Where are you going"
-          style={({ pressed }) => [s.dest, pressed && s.pressed]}>
-          <View style={s.destPin}>
-            <PinIcon size={18} tint={LIME} />
-          </View>
-          <Text
-            variant={destination ? 'heading' : 'body'}
-            tone={destination ? 'ink' : 'faint'}
-            numberOfLines={1}
-            style={s.flex}>
-            {destination?.name ?? (home ? 'Search an estate, junction or street' : 'Search your office or car park')}
-          </Text>
-          <ChevronIcon tint={color.inkMuted} />
-        </Pressable>
-      </Field>
-
-      <Field label="Leaving around">
-        <View style={s.time}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Fifteen minutes earlier"
-            accessibilityState={{ disabled: departMin <= earliest }}
-            disabled={departMin <= earliest}
-            onPress={() => setDepartMin((m) => Math.max(earliest, m - 15))}
-            style={({ pressed }) => [s.step, departMin <= earliest && s.stepOff, pressed && s.pressed]}>
-            <Text variant="title" style={s.stepMinus}>−</Text>
-          </Pressable>
-          <Text variant="display" style={s.timeText} accessibilityLabel={`Leaving around ${hhmm(departMin)}`}>
-            {hhmm(departMin)}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Fifteen minutes later"
-            accessibilityState={{ disabled: departMin >= LATEST }}
-            disabled={departMin >= LATEST}
-            onPress={() => setDepartMin((m) => Math.min(LATEST, m + 15))}
-            style={({ pressed }) => [s.step, s.stepPlus, departMin >= LATEST && s.stepOff, pressed && s.pressed]}>
-            <Text variant="title" style={s.stepPlusText}>+</Text>
-          </Pressable>
-        </View>
-      </Field>
-
-      {already ? null : (
-        <Field
-          label="Repeat"
-          hint={
-            repeat.length === 0
-              ? 'Just today. Pick days to have this ride posted for you every week.'
-              : `Posted for you every ${daysText(repeat)} at ${hhmm(departMin)}. Change or stop it in your account.`
-          }>
-          <DayPicker value={repeat} onChange={setRepeat} />
-        </Field>
-      )}
-
-      <Field label="Give or take" hint="Riders see a window, not a fixed time.">
-        <TileRow options={TOLERANCES} value={toleranceMin} onChange={setToleranceMin} render={(v) => `${v} min`} />
-      </Field>
-
-      <Field
-        label="Seats"
-        hint={booked > 0 ? `${booked} ${booked === 1 ? 'is' : 'are'} already taken, so you cannot go below that.` : undefined}>
-        <TileRow options={seatOptions} value={seats} onChange={setSeats} />
-      </Field>
-
-      <Field
-        label="Fuel contribution"
-        hint={
-          lockedFree
-            ? 'Riders booked this ride as free, so it stays free tonight.'
-            : paid
-              ? needsBank
-                ? undefined
-                : `Each rider pays you ${naira(CONTRIBUTION_NAIRA)} directly, in cash or by transfer, to ${payout?.bankName ?? 'your account'}. Corridor never handles it.`
-              : 'Riders pay nothing. You can ask for a contribution on any ride before anyone books.'
-        }>
-        <TileRow
-          options={lockedFree ? (['free'] as const) : (['free', 'paid'] as const)}
-          value={paid ? 'paid' : 'free'}
-          onChange={(v) => setPaid(v === 'paid')}
-          render={(v) => (v === 'free' ? 'Free' : `${naira(CONTRIBUTION_NAIRA)} each`)}
-        />
-        {needsBank ? (
-          <View style={s.needBank}>
-            <Callout tone="stop" icon={<AlertIcon />}>
-              <Text variant="small" tone="muted">
-                To ask for {naira(CONTRIBUTION_NAIRA)}, add the account riders should pay into. It
-                takes a minute, and you only do it once.
+          <Field
+            label="Starting from"
+            hint={
+              home
+                ? 'Riders meet you here. Be as exact as the gate or the car park.'
+                : 'Where you set off. Riders are picked up along your road, near where they live.'
+            }>
+            <Pressable
+              onPress={() => setSearching('from')}
+              accessibilityRole="button"
+              accessibilityLabel="Where are you starting from"
+              style={({ pressed }) => [s.dest, pressed && s.pressed]}>
+              <View style={[s.destPin, s.fromPin]}>
+                <View style={s.fromDot} />
+              </View>
+              <Text
+                variant={origin ? 'heading' : 'body'}
+                tone={origin ? 'ink' : 'faint'}
+                numberOfLines={1}
+                style={s.flex}>
+                {origin?.name ?? (home ? 'Search where riders meet you' : 'Search your estate or street')}
               </Text>
-            </Callout>
-            <Button label="Add bank details" kind="secondary" arrow onPress={() => router.push('/you')} />
-          </View>
-        ) : paid && payoutFailed ? (
-          <Pressable onPress={reloadPayout} accessibilityRole="button" style={s.needBank}>
-            <Text variant="small" tone="muted">
-              Could not check your bank details. Tap to try again.
-            </Text>
-          </Pressable>
-        ) : null}
-      </Field>
+              <ChevronIcon tint={color.inkMuted} />
+            </Pressable>
+          </Field>
 
-      <Field label="Your car" hint="From your account. Only riders with a seat see it.">
-        <Pressable onPress={() => router.push('/you')} style={s.car} accessibilityRole="button">
-          <CarIcon size={18} tint={color.brandInk} />
-          <Text
-            variant="body"
-            tone={vehicle ? 'ink' : 'faint'}
-            numberOfLines={1}
-            style={[s.flex, vehicle ? s.moreText : null]}>
-            {vehicle || 'Add your car in Account'}
-          </Text>
-          <Text variant="small" tone="brand" style={s.moreText}>
-            {vehicle ? 'Change' : 'Add'}
-          </Text>
-        </Pressable>
-      </Field>
+          <Field
+            label="Heading to"
+            hint={
+              home && usual && destination?.name === usual.name
+                ? 'Your usual destination from Account. Change it here for tonight only.'
+                : home
+                  ? 'Riders dropping off along your road will see this ride.'
+                  : 'Where you work. Riders picked up along your road, and going there, will see this ride.'
+            }>
+            <Pressable
+              onPress={() => setSearching('to')}
+              accessibilityRole="button"
+              accessibilityLabel="Where are you going"
+              style={({ pressed }) => [s.dest, pressed && s.pressed]}>
+              <View style={s.destPin}>
+                <PinIcon size={18} tint={LIME} />
+              </View>
+              <Text
+                variant={destination ? 'heading' : 'body'}
+                tone={destination ? 'ink' : 'faint'}
+                numberOfLines={1}
+                style={s.flex}>
+                {destination?.name ?? (home ? 'Search an estate, junction or street' : 'Search your office or car park')}
+              </Text>
+              <ChevronIcon tint={color.inkMuted} />
+            </Pressable>
+          </Field>
 
-      {details ? (
-        <Field label="Note for riders">
-          <TextInput
-            value={note}
-            onChangeText={setNote}
-            style={[s.input, s.inputTall]}
-            multiline
-            maxLength={NOTE_MAX}
-            placeholder="I wait five minutes, then go"
-            placeholderTextColor={color.inkFaint}
-          />
-          {notePhone ? (
-            <Text variant="small" tone="stop" style={s.noteError}>
-              {noPhones('the note')}
-            </Text>
-          ) : note.length > NOTE_MAX - 40 ? (
-            <Text variant="small" tone="faint" style={s.noteError}>
-              {note.length}/{NOTE_MAX}
-            </Text>
-          ) : null}
-        </Field>
-      ) : (
-        <Pressable onPress={() => setDetails(true)} style={s.more} accessibilityRole="button">
-          <Text variant="body" tone="brand" style={s.moreText}>
-            Add a note for riders
-          </Text>
-          <ChevronIcon tint={color.brandInk} />
-        </Pressable>
+          <Field label="Leaving around">
+            <TimePicker value={departMin} onChange={setDepartMin} earliest={earliest} latest={LATEST} />
+          </Field>
+
+          {already ? null : planThatWay ? (
+            <Field label="Repeat">
+              <Pressable
+                onPress={() => router.push({ pathname: '/plan/[id]', params: { id: planThatWay.id } })}
+                accessibilityRole="button"
+                style={({ pressed }) => [s.car, pressed && s.pressed]}>
+                <Text variant="body" tone="muted" style={s.flex}>
+                  Your weekly ride {directionWords(dir)} runs every {daysText(planThatWay.weekdays)} at{' '}
+                  {planThatWay.time}
+                  {planThatWay.active ? '' : ', paused'}.
+                </Text>
+                <Text variant="small" tone="brand" style={s.moreText}>
+                  Change
+                </Text>
+              </Pressable>
+            </Field>
+          ) : (
+            <Field
+              label="Repeat"
+              hint={
+                repeat.length === 0
+                  ? 'Just today. Pick days to have this ride posted for you every week.'
+                  : `Posted for you every ${daysText(repeat)} at ${clock(departMin)}. Change or stop it in your account.`
+              }>
+              <DayPicker value={repeat} onChange={setRepeat} clearLabel="Just today" />
+            </Field>
+          )}
+
+          <Field label="Give or take" hint="Riders see a window, not a fixed time.">
+            <TileRow options={TOLERANCES} value={toleranceMin} onChange={setToleranceMin} render={(v) => `${v} min`} />
+          </Field>
+
+          <Field
+            label="Seats"
+            hint={booked > 0 ? `${booked} ${booked === 1 ? 'is' : 'are'} already taken, so you cannot go below that.` : undefined}>
+            <TileRow options={seatOptions} value={seats} onChange={setSeats} />
+          </Field>
+
+          <Field
+            label="Fuel contribution"
+            hint={
+              lockedFree
+                ? 'Riders booked this ride as free, so it stays free tonight.'
+                : paid
+                  ? needsBank
+                    ? undefined
+                    : `Each rider pays you ${naira(CONTRIBUTION_NAIRA)} directly, in cash or by transfer, to ${payout?.bankName ?? 'your account'}. Corridor never handles it.`
+                  : 'Riders pay nothing. You can ask for a contribution on any ride before anyone books.'
+            }>
+            <TileRow
+              options={lockedFree ? (['free'] as const) : (['free', 'paid'] as const)}
+              value={paid ? 'paid' : 'free'}
+              onChange={(v) => setPaid(v === 'paid')}
+              render={(v) => (v === 'free' ? 'Free' : `${naira(CONTRIBUTION_NAIRA)} each`)}
+            />
+            {needsBank ? (
+              <View style={s.needBank}>
+                <Callout tone="stop" icon={<AlertIcon />}>
+                  <Text variant="small" tone="muted">
+                    To ask for {naira(CONTRIBUTION_NAIRA)}, add the account riders should pay into. It
+                    takes a minute, and you only do it once.
+                  </Text>
+                </Callout>
+                <Button label="Add bank details" kind="secondary" arrow onPress={() => router.push('/you')} />
+              </View>
+            ) : paid && payoutFailed ? (
+              <Pressable onPress={reloadPayout} accessibilityRole="button" style={s.needBank}>
+                <Text variant="small" tone="muted">
+                  Could not check your bank details. Tap to try again.
+                </Text>
+              </Pressable>
+            ) : null}
+          </Field>
+
+          <Field label="Your car" hint="From your account. Only riders with a seat see it.">
+            <Pressable onPress={() => router.push('/you')} style={s.car} accessibilityRole="button">
+              <CarIcon size={18} tint={color.brandInk} />
+              <Text
+                variant="body"
+                tone={vehicle ? 'ink' : 'faint'}
+                numberOfLines={1}
+                style={[s.flex, vehicle ? s.moreText : null]}>
+                {vehicle || 'Add your car in Account'}
+              </Text>
+              <Text variant="small" tone="brand" style={s.moreText}>
+                {vehicle ? 'Change' : 'Add'}
+              </Text>
+            </Pressable>
+          </Field>
+
+          {details ? (
+            <Field label="Note for riders">
+              <TextInput
+                value={note}
+                onChangeText={setNote}
+                style={[s.input, s.inputTall]}
+                multiline
+                maxLength={NOTE_MAX}
+                placeholder="I wait five minutes, then go"
+                placeholderTextColor={color.inkFaint}
+              />
+              {notePhone ? (
+                <Text variant="small" tone="stop" style={s.noteError}>
+                  {noPhones('the note')}
+                </Text>
+              ) : note.length > NOTE_MAX - 40 ? (
+                <Text variant="small" tone="faint" style={s.noteError}>
+                  {note.length}/{NOTE_MAX}
+                </Text>
+              ) : null}
+            </Field>
+          ) : (
+            <Pressable onPress={() => setDetails(true)} style={s.more} accessibilityRole="button">
+              <Text variant="body" tone="brand" style={s.moreText}>
+                Add a note for riders
+              </Text>
+              <ChevronIcon tint={color.brandInk} />
+            </Pressable>
+          )}
+        </>
       )}
 
       <Modal
@@ -587,66 +601,9 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
   );
 }
 
-/** ISO weekdays, Monday first. */
-const DAYS = [
-  { n: 1, short: 'M', name: 'Monday' },
-  { n: 2, short: 'T', name: 'Tuesday' },
-  { n: 3, short: 'W', name: 'Wednesday' },
-  { n: 4, short: 'T', name: 'Thursday' },
-  { n: 5, short: 'F', name: 'Friday' },
-  { n: 6, short: 'S', name: 'Saturday' },
-  { n: 7, short: 'S', name: 'Sunday' },
-] as const;
-
-function DayPicker({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
-  const weekdays = value.length === 5 && [1, 2, 3, 4, 5].every((n) => value.includes(n));
-  return (
-    <View style={s.days}>
-      <View style={s.dayRow}>
-        {DAYS.map((d) => {
-          const on = value.includes(d.n);
-          return (
-            <Pressable
-              key={d.n}
-              onPress={() => onChange(on ? value.filter((n) => n !== d.n) : [...value, d.n])}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: on }}
-              accessibilityLabel={d.name}
-              style={({ pressed }) => [s.day, on && s.dayOn, pressed && s.pressed]}>
-              <Text variant="data" style={on ? s.dayTextOn : s.dayText}>
-                {d.short}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <Pressable onPress={() => onChange(weekdays ? [] : [1, 2, 3, 4, 5])} accessibilityRole="button" hitSlop={6}>
-        <Text variant="small" tone="brand" style={s.moreText}>
-          {weekdays ? 'Just today' : 'Every weekday'}
-        </Text>
-      </Pressable>
-    </View>
-  );
-}
-
 const s = themed(() =>
   StyleSheet.create({
   flex: { flex: 1 },
-  days: { gap: space.sm },
-  dayRow: { flexDirection: 'row', gap: 6 },
-  day: {
-    flex: 1,
-    height: 44,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.line,
-    backgroundColor: color.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayOn: { backgroundColor: PINE, borderColor: PINE },
-  dayText: { color: color.inkMuted },
-  dayTextOn: { color: LIME },
   pressed: { opacity: 0.6 },
   dest: {
     flexDirection: 'row',
@@ -670,28 +627,6 @@ const s = themed(() =>
   fromPin: { backgroundColor: color.surface, borderWidth: 1, borderColor: color.line },
   fromDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 3, borderColor: PINE, backgroundColor: LIME },
   map: { height: 150, borderRadius: radius.xl, overflow: 'hidden', marginBottom: space.xl },
-  // Pine in both themes: the time is the one number on this screen that matters.
-  time: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: PINE,
-    borderRadius: radius.xl,
-    padding: space.md,
-  },
-  timeText: { fontVariant: ['tabular-nums'], color: '#FFFFFF', fontSize: 44, lineHeight: 50 },
-  step: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.md,
-    backgroundColor: '#24493A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepMinus: { color: '#FFFFFF' },
-  stepPlus: { backgroundColor: LIME },
-  stepPlusText: { color: PINE },
-  stepOff: { opacity: 0.35 },
   needBank: { gap: space.sm, marginTop: space.sm },
   input: {
     backgroundColor: color.surface,

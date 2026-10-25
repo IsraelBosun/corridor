@@ -250,6 +250,10 @@ export const supabaseBackend: Backend = {
     fail((await supabase.from('ride_plans').update({ active }).eq('id', planId)).error);
   },
 
+  async updatePlan(planId, changes) {
+    fail((await supabase.from('ride_plans').update(changes).eq('id', planId)).error);
+  },
+
   async deletePlan(planId) {
     fail((await supabase.from('ride_plans').delete().eq('id', planId)).error);
   },

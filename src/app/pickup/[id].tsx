@@ -5,7 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } f
 import { directionWords, endName, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
-import { hhmm, untilText, useNow } from '@/lib/time';
+import { clock, untilText, useNow } from '@/lib/time';
 import { color, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
@@ -158,7 +158,7 @@ export default function PickupScreen() {
 
       <Text variant="title">{headline}</Text>
       <Text variant="body" tone="muted" style={s.sub}>
-        {work ? 'From' : 'At'} {startName(trip)}. Leaving {hhmm(trip.departMin)}, {untilText(trip.departMin, now)}
+        {work ? 'From' : 'At'} {startName(trip)}. Leaving {clock(trip.departMin)}, {untilText(trip.departMin, now)}
         {work && trip.riders.length > 0 ? '. Each rider waits near their pickup on your road' : ''}
         {trip.contributionNaira ? `. Each rider pays you ${naira(trip.contributionNaira)} as they get in.` : ''}
       </Text>
@@ -210,7 +210,7 @@ export default function PickupScreen() {
                     {p.name}
                   </Text>
                   <Text variant="small" tone={at ? 'go' : 'muted'} numberOfLines={1}>
-                    {at ? `${work ? 'In the car' : 'Here'} since ${hhmm(at)}` : work ? 'Not picked up yet' : 'Not here yet'}
+                    {at ? `${work ? 'In the car' : 'Here'} since ${clock(at)}` : work ? 'Not picked up yet' : 'Not here yet'}
                     {dropFor(drops, riderId)
                       ? `, ${work ? 'picked up near' : 'gets off at'} ${dropFor(drops, riderId)}`
                       : ''}
@@ -422,7 +422,7 @@ function PickingUp({ trip }: { trip: Trip }) {
                     {r.name}
                   </Text>
                   <Text variant="small" tone={at ? 'go' : 'muted'} numberOfLines={1}>
-                    {at ? `In the car since ${hhmm(at)}` : (r.place ?? 'Has not said where')}
+                    {at ? `In the car since ${clock(at)}` : (r.place ?? 'Has not said where')}
                   </Text>
                   {where ? (
                     <Text variant="small" tone="brand" numberOfLines={1}>

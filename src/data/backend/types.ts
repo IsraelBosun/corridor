@@ -241,6 +241,8 @@ export interface Backend {
   /** Returns the new plan id. */
   createPlan(driverId: string, fields: PlanFields): Promise<string>;
   setPlanActive(planId: string, active: boolean): Promise<void>;
+  /** Changes the days ahead. A ride the plan already posted keeps its own details. */
+  updatePlan(planId: string, changes: Partial<PlanFields>): Promise<void>;
   deletePlan(planId: string): Promise<void>;
   /** Posts today's rides from every plan that has not yet. Anyone may ask. */
   postPlannedRides(): Promise<void>;

@@ -207,6 +207,7 @@ function Gate({ scheme }: { scheme: string }) {
           <Stack.Screen name="report/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
           <Stack.Screen name="activity" />
+          <Stack.Screen name="plan/[id]" />
         </Stack.Protected>
       </Stack>
     </StoreProvider>
