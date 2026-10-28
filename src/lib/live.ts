@@ -2,7 +2,7 @@
  * Live location around the pickup: the driver's car for the riders, and each
  * rider still waiting for the driver.
  *
- * From 30 minutes before a ride is due, this phone sends where it is every 10
+ * From 30 minutes before a ride is due, this phone sends where it is every 5
  * seconds or so while Corridor is open. The driver sends until the ride is
  * over. A rider sends until they are in the car: on an evening ride, until
  * they check in at the start; on a morning ride, until the driver picks them
@@ -26,10 +26,10 @@ import { useNow } from './time';
 
 const BEFORE_MS = 30 * 60 * 1000;
 const AFTER_MS = 3 * 60 * 60 * 1000;
-const SEND_EVERY_MS = 10_000;
+const SEND_EVERY_MS = 5_000;
 /** Sent even without a new reading, so a car waiting at a light does not look lost. */
 const REFRESH_MS = 60_000;
-const READ_EVERY_MS = 10_000;
+const READ_EVERY_MS = 5_000;
 const PAUSED_KEY = 'corridor.live-paused';
 
 /** Is this ride in its live window: from 30 minutes before it is due until 3 hours after. */
@@ -164,7 +164,7 @@ function startSharing(tripId: string): () => void {
       send();
     }
     const sub = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.High, distanceInterval: 15, timeInterval: SEND_EVERY_MS },
+      { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: SEND_EVERY_MS },
       (pos) => {
         latest = pos;
       }
@@ -202,7 +202,7 @@ export type LivePoint = { id: string; lat: number; lng: number; at: number };
 /**
  * Where the others on this ride are, as far as this person may see: the
  * driver sees each rider still waiting, a rider sees the driver. Asked every
- * 10 seconds while the screen is open and the ride is in its window.
+ * 5 seconds while the screen is open and the ride is in its window.
  */
 export function useRidePositions(trip: Trip | undefined): LivePoint[] {
   const foreground = useForeground();

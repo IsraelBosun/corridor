@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -695,10 +695,9 @@ function MeDot({
 }) {
   const mx = useSharedValue(x);
   const my = useSharedValue(y);
+  const movedAt = useRef(Date.now());
   useEffect(() => {
-    const cfg = { duration: 900, easing: Easing.linear };
-    mx.value = withTiming(x, cfg);
-    my.value = withTiming(y, cfg);
+    glide(mx, my, x, y, movedAt, 4000);
   }, [x, y, mx, my]);
 
   const style = useAnimatedStyle(() => {
@@ -721,6 +720,33 @@ function MeDot({
   );
 }
 
+/**
+ * Move a dot that follows someone to its new place over about as long as the
+ * last update took to come, so it reaches it as the next one arrives and
+ * looks like steady movement instead of a jump. After a long gap, such as
+ * the app coming back to the front, it goes straight there.
+ */
+function glide(
+  mx: SharedValue<number>,
+  my: SharedValue<number>,
+  x: number,
+  y: number,
+  movedAt: { current: number },
+  longest: number
+) {
+  const now = Date.now();
+  const gap = now - movedAt.current;
+  movedAt.current = now;
+  if (gap > longest * 2.5) {
+    mx.value = x;
+    my.value = y;
+    return;
+  }
+  const cfg = { duration: Math.min(Math.max(gap, 300), longest), easing: Easing.linear };
+  mx.value = withTiming(x, cfg);
+  my.value = withTiming(y, cfg);
+}
+
 /** A marker placed per frame in screen space, so it never scales with the map. */
 function Marker({
   marker,
@@ -738,12 +764,24 @@ function Marker({
   fh: SharedValue<number>;
 }) {
   const { x, y } = marker;
+  const moves = marker.kind === 'car' || marker.kind === 'person';
+  const mx = useSharedValue(x);
+  const my = useSharedValue(y);
+  const movedAt = useRef(Date.now());
+  useEffect(() => {
+    if (moves) glide(mx, my, x, y, movedAt, 8000);
+    else {
+      mx.value = x;
+      my.value = y;
+    }
+  }, [moves, x, y, mx, my]);
+
   const style = useAnimatedStyle(() => {
     const world = TILE * 2 ** z.value;
     return {
       transform: [
-        { translateX: (x - cx.value) * world + fw.value / 2 },
-        { translateY: (y - cy.value) * world + fh.value / 2 },
+        { translateX: (mx.value - cx.value) * world + fw.value / 2 },
+        { translateY: (my.value - cy.value) * world + fh.value / 2 },
       ],
     };
   });

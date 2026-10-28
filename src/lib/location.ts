@@ -29,7 +29,16 @@ let watch: Location.LocationSubscription | null = null;
 let starting = false;
 const listeners = new Set<() => void>();
 
+/** GPS wobbles a few metres even standing still. Smaller moves than this are not drawn. */
+const WOBBLE_M = 4;
+
+function metres(a: LngLat, b: LngLat): number {
+  const k = 111_320;
+  return Math.hypot((a.lat - b.lat) * k, (a.lng - b.lng) * k * Math.cos((a.lat * Math.PI) / 180));
+}
+
 function publish(next: LngLat | null) {
+  if (next && here && metres(next, here) < WOBBLE_M) return;
   here = next;
   listeners.forEach((l) => l());
 }
