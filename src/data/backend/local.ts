@@ -371,6 +371,11 @@ export const localBackend: Backend = {
     );
   },
 
+  // Special prices are set in Watch Tower, which test mode has none of.
+  async getOwnerPrice() {
+    return null;
+  },
+
   async savePayout(userId, row) {
     const me = await requireUser();
     if (me !== userId) throw new Error('You can only change your own bank details.');

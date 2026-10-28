@@ -219,6 +219,8 @@ export interface Backend {
   getPayout(userId: string): Promise<PayoutRow | null>;
   /** The signed in person's own. Null removes them. */
   savePayout(userId: string, row: PayoutRow | null): Promise<void>;
+  /** A special fuel contribution set for this car owner in Watch Tower, or null for the flat one. */
+  getOwnerPrice(userId: string): Promise<number | null>;
 
   // The corridor
   /** Rides departing after `since` (ISO time). Older ones are kept, not shown. */

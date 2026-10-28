@@ -192,6 +192,16 @@ export const supabaseBackend: Backend = {
     fail(error);
   },
 
+  async getOwnerPrice(userId) {
+    const { data, error } = await supabase
+      .from('owner_prices')
+      .select('contribution_naira')
+      .eq('user_id', userId)
+      .maybeSingle();
+    fail(error);
+    return (data as { contribution_naira: number } | null)?.contribution_naira ?? null;
+  },
+
   async listTrips(since) {
     const { data, error } = await supabase
       .from('trips')

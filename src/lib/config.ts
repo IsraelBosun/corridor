@@ -11,8 +11,9 @@ export const WORK_DOMAIN = process.env.EXPO_PUBLIC_WORK_DOMAIN ?? 'example.com';
  * The fuel contribution a driver may ask of each rider, in naira. One flat
  * figure set by Corridor, never by the driver, so it stays a share of the fuel
  * rather than a fare. Riders pay the driver directly; the app never handles it.
- * The database only accepts this figure (trips_contribution_flat), so change
- * both together.
+ * A car owner can have a special figure instead, set in Watch Tower
+ * (corridor.owner_prices). The database accepts only these
+ * (trip_contribution_ok), so change this and that trigger together.
  */
 export const CONTRIBUTION_NAIRA = 1000;
 

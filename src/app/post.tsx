@@ -3,12 +3,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { usePayout } from '@/data/payout';
+import { useOwnerPrice } from '@/data/price';
 import { daysText, usePlans } from '@/data/plans';
 import { directionNow, directionWords, useStore } from '@/data/store';
 import type { Destination, Direction } from '@/data/types';
 import type { Place } from '@/lib/places';
 import {
-  CONTRIBUTION_NAIRA,
   EVENING_END_MIN,
   EVENING_START_MIN,
   MORNING_END_MIN,
@@ -120,10 +120,13 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
   // before that existed keeps whatever it was posted with.
   const vehicle = me?.car ?? already?.vehicle ?? '';
   const [note, setNote] = useState(already?.note ?? '');
-  // Free, or the one flat contribution Corridor sets. Never an amount the
-  // driver types. Riders booked a free ride on those terms, so once anyone
-  // has, it stays free.
+  // Free, or the contribution Corridor sets: the flat one, or a special one
+  // for this car owner from Watch Tower. Never an amount the driver types.
+  // Riders booked a free ride on those terms, so once anyone has, it stays
+  // free. A paid ride keeps the amount it was posted with.
   const [paid, setPaid] = useState(Boolean(already?.contributionNaira));
+  const ownPrice = useOwnerPrice(me?.id);
+  const price = already?.contributionNaira ?? ownPrice;
   const lockedFree = Boolean(already && !already.contributionNaira && already.riders.length > 0);
   const { payout, loading: payoutLoading, failed: payoutFailed, reload: reloadPayout } = usePayout(me?.id, paid);
   // Back from Account with details just saved: look again.
@@ -210,7 +213,7 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
       note,
       destination,
       announceOnDepart: already?.announceOnDepart ?? true,
-      contributionNaira: paid ? CONTRIBUTION_NAIRA : undefined,
+      contributionNaira: paid ? price : undefined,
     };
     // Seats people already hold survive an edit. Changing a time is an
     // update, never a second row.
@@ -481,20 +484,20 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
                 : paid
                   ? needsBank
                     ? undefined
-                    : `Each rider pays you ${naira(CONTRIBUTION_NAIRA)} directly, in cash or by transfer, to ${payout?.bankName ?? 'your account'}. Corridor never handles it.`
+                    : `Each rider pays you ${naira(price)} directly, in cash or by transfer, to ${payout?.bankName ?? 'your account'}. Corridor never handles it.`
                   : 'Riders pay nothing. You can ask for a contribution on any ride before anyone books.'
             }>
             <TileRow
               options={lockedFree ? (['free'] as const) : (['free', 'paid'] as const)}
               value={paid ? 'paid' : 'free'}
               onChange={(v) => setPaid(v === 'paid')}
-              render={(v) => (v === 'free' ? 'Free' : `${naira(CONTRIBUTION_NAIRA)} each`)}
+              render={(v) => (v === 'free' ? 'Free' : `${naira(price)} each`)}
             />
             {needsBank ? (
               <View style={s.needBank}>
                 <Callout tone="stop" icon={<AlertIcon />}>
                   <Text variant="small" tone="muted">
-                    To ask for {naira(CONTRIBUTION_NAIRA)}, add the account riders should pay into. It
+                    To ask for {naira(price)}, add the account riders should pay into. It
                     takes a minute, and you only do it once.
                   </Text>
                 </Callout>
