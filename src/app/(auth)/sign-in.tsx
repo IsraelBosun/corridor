@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { USING_LOCAL } from '@/data/backend';
 import { useSession } from '@/data/session';
+import { cleanEmail, emailProblem } from '@/lib/email';
 import { hasOnboarded, markOnboarded } from '@/lib/onboarding';
 import { color, font, radius, space, themed } from '@/theme/tokens';
 import { AuthScreen } from '@/ui/auth-hero';
@@ -13,7 +14,6 @@ import { Button } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 
 const MIN_PASSWORD = 8;
-const EMAIL = /^\S+@\S+\.\S+$/;
 /** Supabase sends 6 digits by default; the dashboard can raise it to 10. */
 const CODE_MIN = 6;
 const CODE_MAX = 10;
@@ -70,25 +70,29 @@ function EmailSignIn({ startCreating }: { startCreating: boolean }) {
   const [focus, setFocus] = useState<'email' | 'password' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What is wrong with the email, shown under its box once the button is tapped.
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [checkInbox, setCheckInbox] = useState(false);
   const [resetting, setResetting] = useState(false);
   const passwordField = useRef<TextInput>(null);
 
-  const emailOk = EMAIL.test(email.trim());
-  const ready = emailOk && password.length >= (creating ? MIN_PASSWORD : 1);
+  const ready = email.length > 0 && password.length >= (creating ? MIN_PASSWORD : 1);
 
   async function onSubmit() {
     if (!ready || busy) return;
+    const problem = emailProblem(email);
+    setEmailError(problem);
+    if (problem) return;
     setBusy(true);
     setError(null);
     if (creating) {
-      const result = await signUp(email, password);
+      const result = await signUp(cleanEmail(email), password);
       setBusy(false);
       if (!result.ok) setError(result.error);
       else if (result.needsConfirm) setCheckInbox(true);
       return;
     }
-    const result = await signIn(email, password);
+    const result = await signIn(cleanEmail(email), password);
     setBusy(false);
     if (!result.ok) setError(result.error);
     // On success the session appears and the root layout moves on by itself.
@@ -97,6 +101,7 @@ function EmailSignIn({ startCreating }: { startCreating: boolean }) {
   function switchMode() {
     setCreating((v) => !v);
     setError(null);
+    setEmailError(null);
     setCheckInbox(false);
   }
 
@@ -148,10 +153,11 @@ function EmailSignIn({ startCreating }: { startCreating: boolean }) {
         onChangeText={(t) => {
           setEmail(t.replace(/\s/g, ''));
           if (error) setError(null);
+          if (emailError) setEmailError(null);
         }}
         onFocus={() => setFocus('email')}
         onBlur={() => setFocus(null)}
-        style={[s.field, s.input, focus === 'email' && s.fieldFocus]}
+        style={[s.field, s.input, focus === 'email' && s.fieldFocus, emailError && s.fieldBad]}
         placeholder="you@email.com"
         placeholderTextColor={color.inkFaint}
         autoCapitalize="none"
@@ -163,6 +169,11 @@ function EmailSignIn({ startCreating }: { startCreating: boolean }) {
         onSubmitEditing={() => passwordField.current?.focus()}
         accessibilityLabel="Email"
       />
+      {emailError ? (
+        <Text variant="small" tone="stop" style={s.emailError}>
+          {emailError}
+        </Text>
+      ) : null}
 
       <Text variant="eyebrow" style={s.label}>
         Password
@@ -217,7 +228,7 @@ function EmailSignIn({ startCreating }: { startCreating: boolean }) {
         </Text>
       ) : checkInbox ? (
         <Text variant="small" tone="go" style={s.note}>
-          Check {email.trim()} for a confirmation link. Open it on this phone and
+          Check {cleanEmail(email)} for a confirmation link. Open it on this phone and
           Corridor signs you in. Opened anywhere else, it still confirms you: come
           back here and sign in.
         </Text>
@@ -242,17 +253,20 @@ function ResetPassword({ initialEmail, onBack }: { initialEmail: string; onBack:
   const [focus, setFocus] = useState<'email' | 'code' | 'password' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const codeField = useRef<TextInput>(null);
   const passwordField = useRef<TextInput>(null);
 
-  const emailOk = EMAIL.test(email.trim());
-  const ready = sent ? code.length >= CODE_MIN && password.length >= MIN_PASSWORD : emailOk;
+  const ready = sent ? code.length >= CODE_MIN && password.length >= MIN_PASSWORD : email.length > 0;
 
   async function onSend() {
-    if (!emailOk || busy) return;
+    if (!email || busy) return;
+    const problem = emailProblem(email);
+    setEmailError(problem);
+    if (problem) return;
     setBusy(true);
     setError(null);
-    const result = await sendPasswordReset(email);
+    const result = await sendPasswordReset(cleanEmail(email));
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
@@ -267,7 +281,7 @@ function ResetPassword({ initialEmail, onBack }: { initialEmail: string; onBack:
     if (!ready || busy) return;
     setBusy(true);
     setError(null);
-    const result = await resetPassword(email, code, password);
+    const result = await resetPassword(cleanEmail(email), code, password);
     // On success this screen is already on its way out.
     setBusy(false);
     if (!result.ok) setError(result.error);
@@ -282,7 +296,7 @@ function ResetPassword({ initialEmail, onBack }: { initialEmail: string; onBack:
       title={sent ? 'Check your email.' : 'Reset your password.'}
       body={
         sent
-          ? `If there is an account for ${email.trim()}, a code is on its way. It works for one hour.`
+          ? `If there is an account for ${cleanEmail(email)}, a code is on its way. It works for one hour.`
           : 'We will email a code to your personal email.'
       }
       footer={
@@ -313,10 +327,11 @@ function ResetPassword({ initialEmail, onBack }: { initialEmail: string; onBack:
             onChangeText={(t) => {
               setEmail(t.replace(/\s/g, ''));
               clear();
+              if (emailError) setEmailError(null);
             }}
             onFocus={() => setFocus('email')}
             onBlur={() => setFocus(null)}
-            style={[s.field, s.input, focus === 'email' && s.fieldFocus]}
+            style={[s.field, s.input, focus === 'email' && s.fieldFocus, emailError && s.fieldBad]}
             placeholder="you@email.com"
             placeholderTextColor={color.inkFaint}
             autoCapitalize="none"
@@ -328,6 +343,11 @@ function ResetPassword({ initialEmail, onBack }: { initialEmail: string; onBack:
             onSubmitEditing={onSend}
             accessibilityLabel="Email"
           />
+          {emailError ? (
+            <Text variant="small" tone="stop" style={s.emailError}>
+              {emailError}
+            </Text>
+          ) : null}
         </>
       ) : (
         <>
@@ -427,6 +447,8 @@ const s = themed(() =>
       marginBottom: space.lg,
     },
     fieldFocus: { borderColor: color.brand },
+    fieldBad: { borderColor: color.stop },
+    emailError: { marginTop: -space.sm, marginBottom: space.lg, paddingHorizontal: space.xs },
     row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
     input: {
       paddingVertical: space.lg,
