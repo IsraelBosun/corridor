@@ -35,6 +35,8 @@ export function PlaceSearch({
   after,
   privacy,
   offerHere,
+  hereNote = 'Riders meet you where you are standing now',
+  onPickHere,
 }: {
   placeholder: string;
   /** Shown before anything is typed. */
@@ -48,6 +50,10 @@ export function PlaceSearch({
   privacy: string;
   /** Offer "use my current location" above the results. */
   offerHere?: boolean;
+  /** The line under "Use my current location". */
+  hereNote?: string;
+  /** Instead of onPick for the current location, such as to confirm its name first. */
+  onPickHere?: (p: Place) => void;
 }) {
   const me = useMyLocation();
   const [query, setQuery] = useState('');
@@ -72,7 +78,8 @@ export function PlaceSearch({
     setLocating(true);
     setError(null);
     try {
-      onPick(await nameForPoint(me));
+      const place = await nameForPoint(me);
+      (onPickHere ?? onPick)(place);
     } catch {
       setError('Could not name where you are. Search for it instead.');
     } finally {
@@ -176,7 +183,7 @@ export function PlaceSearch({
                 {locating ? 'Finding where you are' : 'Use my current location'}
               </Text>
               <Text variant="small" tone="muted" numberOfLines={1}>
-                {me ? 'Riders meet you where you are standing now' : 'Turn on location to use this'}
+                {me ? hereNote : 'Turn on location to use this'}
               </Text>
             </View>
             {locating ? <ActivityIndicator color={color.inkFaint} /> : null}

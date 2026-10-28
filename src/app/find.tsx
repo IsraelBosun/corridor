@@ -3,6 +3,7 @@ import { Pressable, StyleSheet } from 'react-native';
 
 import { useStore } from '@/data/store';
 import { space, themed } from '@/theme/tokens';
+import { showDialog } from '@/ui/dialog';
 import { PlaceSearch } from '@/ui/place-search';
 import { Text } from '@/ui/text';
 
@@ -40,6 +41,22 @@ export default function FindScreen() {
         await setDropOff({ name: p.name, lat: p.lat, lng: p.lng });
         back();
       }}
+      // Riders can use where they are now. The one place serves both ways, so
+      // it only makes sense near home, and the name is shown before it is saved.
+      offerHere={!driver}
+      hereNote="Best used when you are at or near home"
+      onPickHere={(p) =>
+        showDialog(`Use ${p.name}?`, 'It is where you are picked up in the morning and where you get off in the evening.', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Use it',
+            onPress: async () => {
+              await setDropOff({ name: p.name, lat: p.lat, lng: p.lng });
+              back();
+            },
+          },
+        ])
+      }
       // Riders can change their place but not clear it: no place, no rides.
       after={
         dropOff && driver ? (
