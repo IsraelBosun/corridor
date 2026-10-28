@@ -325,7 +325,7 @@ export default function TripScreen() {
               kind="go"
               onPress={() => {
                 finishRide(trip.id);
-                router.replace('/');
+                router.replace({ pathname: '/done/[id]', params: { id: trip.id } });
               }}
             />
           ) : mine ? (
@@ -369,6 +369,14 @@ export default function TripScreen() {
               You are signed up as a car owner. To take a seat instead, switch to
               riding in your account.
             </Text>
+          ) : !dropOff ? (
+            // Opened from a notification or a link before setting a place.
+            <>
+              <Text variant="small" tone="muted" center>
+                Set {work ? 'where you are picked up' : 'where you get off'} before you take a seat.
+              </Text>
+              <Button label="Set your place first" onPress={() => router.push('/find')} arrow />
+            </>
           ) : (
             <Button
               label={

@@ -21,6 +21,7 @@ import { AlertIcon, ChatIcon, ChevronIcon, PinIcon, PlusIcon } from '@/ui/icons'
 import { Avatar, Button, SectionTitle } from '@/ui/primitives';
 import { BottomSheet } from '@/ui/sheet';
 import { CarLine, LiveNotice, useLiveView } from '@/ui/live';
+import { PingRiders } from '@/ui/ping';
 import { RecordingNotice } from '@/ui/recording-notice';
 import { DirectionsButton, RidesMap, TripMap, useRiderDrops } from '@/ui/trip-map';
 import { TripRow } from '@/ui/trip-row';
@@ -113,10 +114,13 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: La
   // A cancelled ride is not going anywhere, so nothing of it is drawn.
   const drawn = mySeat && mySeat.status !== 'cancelled' ? mySeat : undefined;
   const live = useLiveView(drawn);
+  // No rides are shown until the rider says where they get off. A seat they
+  // already hold is still shown.
+  const needsPlace = !dropOff && !mySeat;
 
   return (
     <View style={s.screen}>
-      {drawn || loading ? (
+      {drawn || loading || needsPlace ? (
         <TripMap
           origin={drawn?.origin}
           destination={drawn?.destination}
@@ -190,7 +194,9 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: La
               aside={
                 loading
                   ? 'Loading'
-                  : checking
+                  : needsPlace
+                    ? undefined
+                    : checking
                     ? `${passing.length} ${passing.length === 1 ? 'suits' : 'suit'} you`
                     : `${open.length} posted so far`
               }
@@ -202,6 +208,8 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: La
           <ActivityIndicator style={s.loading} color={color.inkFaint} />
         ) : mySeat ? (
           <MyRide trip={mySeat} now={now} car={live.car} />
+        ) : needsPlace ? (
+          <SetPlace home={home} />
         ) : (
           <Browse dir={dir} passing={passing} others={others} now={now} here={here} />
         )}
@@ -389,6 +397,32 @@ function SheetTitle({
   );
 }
 
+/** In place of the rides, until the rider has set where they get off. */
+function SetPlace({ home }: { home: boolean }) {
+  const router = useRouter();
+  return (
+    <View style={s.empty}>
+      <View style={s.hint}>
+        <PinIcon size={18} tint={color.accentInk} />
+        <Text variant="small" tone="accent" style={s.flex}>
+          {home
+            ? 'Rides show once you set where you get off, so you only see the ones going your way.'
+            : 'Rides show once you set where you are picked up, so you only see the ones going your way.'}
+        </Text>
+      </View>
+      <Text variant="small" tone="muted" style={s.emptyBody}>
+        It is the same one place both ways: where you get off on the way home and where you are picked
+        up on the way to work.
+      </Text>
+      <Button
+        label={home ? 'Set where you get off' : 'Set where you are picked up'}
+        onPress={() => router.push('/find')}
+        arrow
+      />
+    </View>
+  );
+}
+
 function Browse({
   dir,
   passing,
@@ -426,17 +460,6 @@ function Browse({
 
   return (
     <>
-      {!dropOff ? (
-        <Pressable onPress={() => router.push('/find')} style={s.hint} accessibilityRole="button">
-          <PinIcon size={18} tint={color.accentInk} />
-          <Text variant="small" tone="accent" style={s.flex}>
-            {home
-              ? 'Set where you get off to see which rides pass it.'
-              : 'Set where you are picked up to see which rides pass it.'}
-          </Text>
-        </Pressable>
-      ) : null}
-
       {/*
         Only after a "no". While the first fix is coming in there is nothing
         to say, and allowing it is a tap away rather than a dead sentence.
@@ -583,7 +606,10 @@ function MyRide({ trip, now, car }: { trip: Trip; now: number; car: LivePoint | 
         <Button
           label={work ? 'I have arrived' : 'I have been dropped off'}
           kind="go"
-          onPress={() => finishRide(trip.id)}
+          onPress={() => {
+            finishRide(trip.id);
+            router.push({ pathname: '/done/[id]', params: { id: trip.id } });
+          }}
         />
         <Button
           label="Message car owner and riders"
@@ -713,6 +739,7 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
         onPress={() => router.push({ pathname: '/pickup/[id]', params: { id: trip.id } })}
         arrow
       />
+      <PingRiders trip={trip} />
       <LiveNotice trip={trip} />
 
       <View style={s.pair}>

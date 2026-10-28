@@ -11,6 +11,7 @@ import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
 import { Avatar, Button, Callout, Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
 import { LiveNotice, riderLiveText, useLiveView } from '@/ui/live';
+import { PingRiders } from '@/ui/ping';
 import { RecordingNotice } from '@/ui/recording-notice';
 import { Text } from '@/ui/text';
 import { DirectionsButton, TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
@@ -174,6 +175,7 @@ export default function PickupScreen() {
         />
       </View>
 
+      <PingRiders trip={trip} />
       <LiveNotice trip={trip} />
 
       {overdue ? (
@@ -274,7 +276,7 @@ function DroppingOff({ trip }: { trip: Trip }) {
           label="Everyone is dropped off"
           onPress={() => {
             finishRide(trip.id);
-            router.replace('/');
+            router.replace({ pathname: '/done/[id]', params: { id: trip.id } });
           }}
         />
       }>
@@ -351,7 +353,7 @@ function PickingUp({ trip }: { trip: Trip }) {
           onPress={() => {
             const end = () => {
               finishRide(trip.id);
-              router.replace('/');
+              router.replace({ pathname: '/done/[id]', params: { id: trip.id } });
             };
             if (toCollect.length === 0) return end();
             // Someone still waiting at their pickup would be left there,
@@ -396,6 +398,7 @@ function PickingUp({ trip }: { trip: Trip }) {
       </View>
 
       <DirectionsButton trip={trip} drops={toCollect} />
+      <PingRiders trip={trip} />
       <LiveNotice trip={trip} />
       <RecordingNotice />
 

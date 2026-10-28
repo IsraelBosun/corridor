@@ -40,8 +40,9 @@ export default function FindScreen() {
         await setDropOff({ name: p.name, lat: p.lat, lng: p.lng });
         back();
       }}
+      // Riders can change their place but not clear it: no place, no rides.
       after={
-        dropOff ? (
+        dropOff && driver ? (
           <Pressable
             onPress={async () => {
               await setDropOff(null);
@@ -50,7 +51,7 @@ export default function FindScreen() {
             style={s.clear}
             accessibilityRole="button">
             <Text variant="small" tone="stop" style={s.bold}>
-              {driver ? 'Clear where I usually go' : 'Clear where I get off'}
+              Clear where I usually go
             </Text>
           </Pressable>
         ) : null

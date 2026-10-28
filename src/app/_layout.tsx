@@ -203,6 +203,7 @@ function Gate({ scheme }: { scheme: string }) {
           <Stack.Screen name="you" options={() => ({ animation: justSwitchedTheme() ? 'none' : 'default' })} />
           <Stack.Screen name="trip/[id]" />
           <Stack.Screen name="pickup/[id]" />
+          <Stack.Screen name="done/[id]" options={{ animation: 'fade' }} />
           <Stack.Screen name="chat/[id]" />
           <Stack.Screen name="report/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
