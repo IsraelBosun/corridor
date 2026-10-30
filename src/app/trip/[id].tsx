@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useQuestions } from '@/data/chat';
 import { usePayout } from '@/data/payout';
 import { useSession } from '@/data/session';
 import { bookable, directionWords, endName, seatsOpen, startName, useStore, useTrip } from '@/data/store';
@@ -55,6 +56,8 @@ export default function TripScreen() {
   );
   // The car, live, for a rider holding a seat. Nobody else is told where it is.
   const live = useLiveView(holding ? trip : undefined);
+  // Questions about the ride: every rider's for its car owner, your own otherwise.
+  const { threads } = useQuestions(trip?.id, Boolean(me && trip && !holding));
 
   if (!trip) {
     return (
@@ -287,6 +290,26 @@ export default function TripScreen() {
             </View>
           ) : null}
 
+          {isDriver && threads.length > 0 ? (
+            <View>
+              <Text variant="eyebrow" tone="muted" style={s.questionsHead}>
+                Questions from riders
+              </Text>
+              {threads.map((q, i) => (
+                <Row
+                  key={q.askerId}
+                  icon={<ChatIcon />}
+                  title={person(q.askerId).name}
+                  subtitle={(q.waiting ? 'Waiting for your reply: ' : 'You replied. ') + q.last.body}
+                  onPress={() =>
+                    router.push({ pathname: '/chat/[id]', params: { id: trip.id, with: q.askerId } })
+                  }
+                  last={i === threads.length - 1}
+                />
+              ))}
+            </View>
+          ) : null}
+
           {mine || isDriver ? (
             <Row
               icon={<AlertIcon />}
@@ -299,8 +322,7 @@ export default function TripScreen() {
           ) : null}
 
           <Text variant="small" tone="faint" style={s.foot}>
-            Corridor connects verified colleagues but does not inspect cars. Ride with people you are
-            comfortable with.
+            Corridor connects verified colleagues but does not inspect cars.
           </Text>
         </ScrollView>
 
@@ -378,6 +400,14 @@ export default function TripScreen() {
               <Button label="Set your place first" onPress={() => router.push('/find')} arrow />
             </>
           ) : (
+            <>
+            {trip.status === 'posted' || trip.status === 'boarding' ? (
+              <Button
+                label={threads.length > 0 ? `Your questions to ${driver.name.split(' ')[0]}` : `Ask ${driver.name.split(' ')[0]} about this ride`}
+                kind="secondary"
+                onPress={() => router.push({ pathname: '/chat/[id]', params: { id: trip.id } })}
+              />
+            ) : null}
             <Button
               label={
                 trip.status === 'left'
@@ -395,6 +425,7 @@ export default function TripScreen() {
               onPress={onReserve}
               disabled={!canBook || open === 0 || busy}
             />
+            </>
           )}
         </View>
       </SafeAreaView>
@@ -559,6 +590,7 @@ const s = themed(() =>
     paddingVertical: space.xs,
   },
   foot: { marginTop: space.md },
+  questionsHead: { marginBottom: space.sm },
   footer: {
     paddingHorizontal: GUTTER,
     paddingTop: space.md,

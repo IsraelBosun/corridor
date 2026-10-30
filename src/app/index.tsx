@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useQuestions } from '@/data/chat';
 import { useSession } from '@/data/session';
 import { bookable, directionNow, directionWords, seatsOpen, startName, useStore } from '@/data/store';
 import type { Direction, Trip } from '@/data/types';
@@ -677,6 +678,8 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
   const router = useRouter();
   const { person } = useStore();
   const left = seatsOpen(trip);
+  // Riders asking about this ride before they book.
+  const { threads, waiting } = useQuestions(trip.id, true);
   const names = trip.riders.map((r) => person(r).name.split(' ')[0]).join(', ');
   // Three or four faces next to the count leave it no room on a narrow phone.
   const face = trip.riders.length > 2 ? 34 : 44;
@@ -741,6 +744,17 @@ function MyOffer({ trip, now }: { trip: Trip; now: number }) {
       />
       <PingRiders trip={trip} />
       <LiveNotice trip={trip} />
+      {threads.length > 0 ? (
+        <Button
+          label={
+            waiting > 0
+              ? `${waiting} ${waiting === 1 ? 'question' : 'questions'} waiting for you`
+              : `Questions from riders (${threads.length})`
+          }
+          kind="secondary"
+          onPress={() => router.push({ pathname: '/trip/[id]', params: { id: trip.id } })}
+        />
+      ) : null}
 
       <View style={s.pair}>
         <Button

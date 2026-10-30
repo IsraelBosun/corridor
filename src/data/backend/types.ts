@@ -75,6 +75,8 @@ export type MessageRow = {
   author_id: string;
   body: string;
   created_at: string;
+  /** The rider a question thread belongs to. Null in the ride's group chat. */
+  asker_id: string | null;
 };
 
 export type TripFields = {
@@ -266,8 +268,15 @@ export interface Backend {
   setPresence(tripId: string, riderId: string, at: string | null): Promise<void>;
 
   // Trip chat
-  listMessages(tripId: string): Promise<MessageRow[]>;
-  sendMessage(tripId: string, authorId: string, body: string): Promise<MessageRow>;
+  /**
+   * The group chat, or with askerId one rider's questions to the car owner.
+   * Only the asker and the car owner can read a question thread.
+   */
+  listMessages(tripId: string, askerId?: string | null): Promise<MessageRow[]>;
+  /** Every question thread on a ride this person can see, oldest first. */
+  listQuestions(tripId: string): Promise<MessageRow[]>;
+  sendMessage(tripId: string, authorId: string, body: string, askerId?: string | null): Promise<MessageRow>;
+  /** Every new message on the ride, group chat and questions alike. */
   onMessage(tripId: string, cb: (row: MessageRow) => void): () => void;
 
   // Safety

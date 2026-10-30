@@ -18,6 +18,8 @@ const TRIP_SELECT =
 const PLAN_COLUMNS =
   'id, direction, weekdays, depart_time, tolerance_min, seats_total, vehicle, note, origin_name, origin_lat, origin_lng, destination_name, destination_lat, destination_lng, contribution_naira, announce_on_depart, active';
 
+const MESSAGE_COLUMNS = 'id, author_id, body, created_at, asker_id';
+
 function fail(error: { message: string } | null): void {
   if (error) throw new Error(error.message);
 }
@@ -331,21 +333,29 @@ export const supabaseBackend: Backend = {
     fail(error);
   },
 
-  async listMessages(tripId) {
+  async listMessages(tripId, askerId) {
+    const q = supabase.from('messages').select(MESSAGE_COLUMNS).eq('trip_id', tripId);
+    const { data, error } = await (askerId ? q.eq('asker_id', askerId) : q.is('asker_id', null)).order('created_at');
+    fail(error);
+    return (data ?? []) as MessageRow[];
+  },
+
+  async listQuestions(tripId) {
     const { data, error } = await supabase
       .from('messages')
-      .select('id, author_id, body, created_at')
+      .select(MESSAGE_COLUMNS)
       .eq('trip_id', tripId)
+      .not('asker_id', 'is', null)
       .order('created_at');
     fail(error);
     return (data ?? []) as MessageRow[];
   },
 
-  async sendMessage(tripId, authorId, body) {
+  async sendMessage(tripId, authorId, body, askerId) {
     const { data, error } = await supabase
       .from('messages')
-      .insert({ trip_id: tripId, author_id: authorId, body })
-      .select('id, author_id, body, created_at')
+      .insert({ trip_id: tripId, author_id: authorId, body, asker_id: askerId ?? null })
+      .select(MESSAGE_COLUMNS)
       .single();
     fail(error);
     return data as MessageRow;
@@ -353,7 +363,8 @@ export const supabaseBackend: Backend = {
 
   onMessage(tripId, cb) {
     const channel = supabase
-      .channel('chat-' + tripId)
+      // Its own name each time: the chat screen and a ride's question count can listen at once.
+      .channel('chat-' + tripId + '-' + Math.random().toString(36).slice(2))
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'corridor', table: 'messages', filter: 'trip_id=eq.' + tripId },

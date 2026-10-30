@@ -1,4 +1,4 @@
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,30 +12,39 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTripChat } from '@/data/chat';
-import { useStore, useTrip } from '@/data/store';
+import { bookable, seatsOpen, useStore, useTrip } from '@/data/store';
+import { naira } from '@/lib/config';
 import { setOpenChat } from '@/lib/reminders';
 import { clock } from '@/lib/time';
 import { color, font, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, ArrowIcon, LockIcon } from '@/ui/icons';
-import { Avatar, Callout, ScreenHeader } from '@/ui/primitives';
+import { Avatar, Button, Callout, ScreenHeader } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 
 export default function ChatScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const { person, me, loading: tripsLoading } = useStore();
+  // "with" is the rider whose questions these are. Without it, a rider who
+  // has not booked is asking, and everyone else is in the group chat.
+  const { id, with: withId } = useLocalSearchParams<{ id: string; with?: string }>();
+  const router = useRouter();
+  const { person, me, role, dropOff, reserve, loading: tripsLoading } = useStore();
   const trip = useTrip(id);
-  const { messages, loading, error, send, clearError } = useTripChat(id, me?.id);
+  const onThisTrip = trip && me ? trip.driverId === me.id || trip.riders.includes(me.id) : false;
+  const askerId = withId || (trip && me && !onThisTrip ? me.id : undefined);
+  const { messages, loading, error, send, clearError } = useTripChat(id, me?.id, askerId);
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [booking, setBooking] = useState(false);
+  const [bookFailed, setBookFailed] = useState(false);
   const scroller = useRef<ScrollView>(null);
 
   // While this chat is on screen, its new messages arrive here, not as a push banner.
+  const chatKey = askerId ? `${id}?with=${askerId}` : id;
   useFocusEffect(
     useCallback(() => {
-      setOpenChat(id);
+      setOpenChat(chatKey);
       return () => setOpenChat(null);
-    }, [id]),
+    }, [chatKey]),
   );
 
   useEffect(() => {
@@ -74,9 +83,26 @@ export default function ChatScreen() {
     );
   }
 
-  const onThisTrip = me ? trip.driverId === me.id || trip.riders.includes(me.id) : false;
+  const driverFirst = person(trip.driverId).name.split(' ')[0];
+  const question = Boolean(askerId);
+  const iAmAsking = question && askerId === me?.id;
+  const askerFirst = askerId ? person(askerId).name.split(' ')[0] : '';
+  const allowed = question ? iAmAsking || trip.driverId === me?.id : onThisTrip;
+  const closed = question && trip.status !== 'posted' && trip.status !== 'boarding';
+  // A rider asking can book from here, once the answer is what they hoped.
+  const canBookHere =
+    iAmAsking && !trip.riders.includes(me!.id) && role !== 'driver' && bookable(trip) && seatsOpen(trip) > 0;
 
-  if (!onThisTrip) {
+  async function onBook() {
+    setBooking(true);
+    setBookFailed(false);
+    const ok = await reserve(trip!.id);
+    setBooking(false);
+    if (ok) router.replace({ pathname: '/trip/[id]', params: { id: trip!.id } });
+    else setBookFailed(true);
+  }
+
+  if (!allowed) {
     return (
       <SafeAreaView style={s.screen} edges={['top', 'left', 'right']}>
         <View style={s.pad}>
@@ -100,7 +126,7 @@ export default function ChatScreen() {
       */}
       <KeyboardAvoidingView style={s.flex} behavior="padding">
         <View style={s.pad}>
-          <ScreenHeader eyebrow={`Trip ${trip.code}`} />
+          <ScreenHeader eyebrow={question ? (iAmAsking ? `Ask ${driverFirst}` : `Question from ${askerFirst}`) : `Trip ${trip.code}`} />
         </View>
 
         <ScrollView
@@ -110,8 +136,9 @@ export default function ChatScreen() {
           showsVerticalScrollIndicator={false}>
           <Callout icon={<LockIcon />}>
             <Text variant="small" tone="muted">
-              Only {person(trip.driverId).name.split(' ')[0]} and the people
-              holding a seat can read this. Phone numbers cannot be sent here.
+              {question
+                ? `Only you and ${iAmAsking ? driverFirst : askerFirst} can read this. Phone numbers cannot be sent here.`
+                : `Only ${driverFirst} and the people holding a seat can read this. Phone numbers cannot be sent here.`}
             </Text>
           </Callout>
 
@@ -121,7 +148,9 @@ export default function ChatScreen() {
             </Text>
           ) : messages.length === 0 ? (
             <Text variant="small" tone="faint" style={s.status}>
-              Nothing said yet. Most trips never need a word, which is the point.
+              {iAmAsking
+                ? 'Ask about the pickup spot, the time, or anything else before you book.'
+                : 'Nothing said yet. Most trips never need a word, which is the point.'}
             </Text>
           ) : null}
 
@@ -162,6 +191,37 @@ export default function ChatScreen() {
           </Pressable>
         ) : null}
 
+        {canBookHere ? (
+          <View style={s.book}>
+            {bookFailed ? (
+              <Text variant="small" tone="muted" center>
+                That seat could not be reserved. Open the ride to see why.
+              </Text>
+            ) : null}
+            {dropOff ? (
+              <Button
+                label={
+                  booking
+                    ? 'Reserving'
+                    : trip.contributionNaira
+                      ? `Reserve a seat, ${naira(trip.contributionNaira)}`
+                      : 'Reserve a seat'
+                }
+                kind="secondary"
+                onPress={onBook}
+                disabled={booking}
+              />
+            ) : (
+              <Button label="Set your place to book" kind="secondary" onPress={() => router.push('/find')} />
+            )}
+          </View>
+        ) : null}
+
+        {closed ? (
+          <Text variant="small" tone="faint" center style={s.closed}>
+            This ride has left, so questions about it are closed.
+          </Text>
+        ) : (
         <View style={s.composer}>
           <TextInput
             value={draft}
@@ -170,7 +230,13 @@ export default function ChatScreen() {
               if (error) clearError();
             }}
             style={s.input}
-            placeholder={`Running late? Tell ${person(trip.driverId).name.split(' ')[0]}`}
+            placeholder={
+              question
+                ? iAmAsking
+                  ? `Ask ${driverFirst} about the ride`
+                  : `Reply to ${askerFirst}`
+                : `Running late? Tell ${driverFirst}`
+            }
             placeholderTextColor={color.inkFaint}
             multiline
             maxLength={500}
@@ -189,6 +255,7 @@ export default function ChatScreen() {
             <ArrowIcon tint={color.onInk} />
           </Pressable>
         </View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -249,6 +316,8 @@ const s = themed(() =>
     justifyContent: 'center',
   },
   sendDisabled: { opacity: 0.3 },
+  book: { paddingHorizontal: GUTTER, paddingTop: space.md, gap: space.sm },
+  closed: { paddingHorizontal: GUTTER, paddingVertical: space.lg },
   pressed: { opacity: 0.7 },
   })
 );

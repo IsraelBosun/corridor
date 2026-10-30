@@ -142,6 +142,7 @@ function db(): Promise<SQLite.SQLiteDatabase> {
         'trips ADD COLUMN contribution_naira INTEGER',
         "trips ADD COLUMN direction TEXT NOT NULL DEFAULT 'home'",
         'profiles ADD COLUMN car TEXT',
+        'messages ADD COLUMN asker_id TEXT',
       ]) {
         try {
           await d.execAsync(`ALTER TABLE ${col}`);
@@ -614,31 +615,67 @@ export const localBackend: Backend = {
     tripsChanged();
   },
 
-  async listMessages(tripId) {
+  async listMessages(tripId, askerId) {
     const d = await db();
+    return askerId
+      ? d.getAllAsync<MessageRow>(
+          'SELECT id, author_id, body, created_at, asker_id FROM messages WHERE trip_id = ? AND asker_id = ? ORDER BY created_at',
+          tripId, askerId
+        )
+      : d.getAllAsync<MessageRow>(
+          'SELECT id, author_id, body, created_at, asker_id FROM messages WHERE trip_id = ? AND asker_id IS NULL ORDER BY created_at',
+          tripId
+        );
+  },
+
+  async listQuestions(tripId) {
+    const me = await requireUser();
+    const d = await db();
+    // The car owner sees every thread, a rider only their own, as the server's policy.
     return d.getAllAsync<MessageRow>(
-      'SELECT id, author_id, body, created_at FROM messages WHERE trip_id = ? ORDER BY created_at',
-      tripId
+      `SELECT m.id, m.author_id, m.body, m.created_at, m.asker_id FROM messages m JOIN trips t ON t.id = m.trip_id
+       WHERE m.trip_id = ? AND m.asker_id IS NOT NULL AND (m.asker_id = ? OR t.driver_id = ?) ORDER BY m.created_at`,
+      tripId, me, me
     );
   },
 
-  async sendMessage(tripId, authorId, body) {
+  async sendMessage(tripId, authorId, body, askerId) {
     const me = await requireUser();
     if (me !== authorId) throw new Error('You can only send as yourself.');
     const d = await db();
-    const onTrip = await d.getFirstAsync<{ n: number }>(
-      `SELECT (SELECT COUNT(*) FROM trips WHERE id = ? AND driver_id = ?) +
-              (SELECT COUNT(*) FROM reservations WHERE trip_id = ? AND rider_id = ?) AS n`,
-      tripId, me, tripId, me
-    );
-    if ((onTrip?.n ?? 0) === 0) throw new Error('Only people on this ride can message it.');
+    if (askerId) {
+      // The rules in 20261030120000_ride_questions.sql.
+      const trip = await d.getFirstAsync<{ driver_id: string; status: string }>(
+        'SELECT driver_id, status FROM trips WHERE id = ?', tripId
+      );
+      if (!trip || (trip.status !== 'posted' && trip.status !== 'boarding'))
+        throw new Error('This ride has left, so questions about it are closed.');
+      if (askerId === trip.driver_id) throw new Error('This is your own ride.');
+      if (me !== askerId && me !== trip.driver_id) throw new Error('Only the car owner and the rider asking can write here.');
+      const thread = await d.getAllAsync<{ author_id: string }>(
+        'SELECT author_id FROM messages WHERE trip_id = ? AND asker_id = ? ORDER BY created_at', tripId, askerId
+      );
+      if (me === trip.driver_id && !thread.some((m) => m.author_id === askerId))
+        throw new Error('Riders start these chats. Wait for a question.');
+      if (me === askerId) {
+        const lastReply = thread.map((m) => m.author_id).lastIndexOf(trip.driver_id);
+        if (thread.slice(lastReply + 1).length >= 2) throw new Error('Wait for the car owner to reply before you send more.');
+      }
+    } else {
+      const onTrip = await d.getFirstAsync<{ n: number }>(
+        `SELECT (SELECT COUNT(*) FROM trips WHERE id = ? AND driver_id = ?) +
+                (SELECT COUNT(*) FROM reservations WHERE trip_id = ? AND rider_id = ?) AS n`,
+        tripId, me, tripId, me
+      );
+      if ((onTrip?.n ?? 0) === 0) throw new Error('Only people on this ride can message it.');
+    }
     if (body.length < 1 || body.length > 500) throw new Error('Messages are 1 to 500 characters.');
     // The same error text the server's constraint produces, so chat.ts reads it the same way.
     if (PHONE_SHAPED.test(body)) throw new Error('messages_no_phone_numbers');
-    const row: MessageRow = { id: uuid(), author_id: me, body, created_at: now() };
+    const row: MessageRow = { id: uuid(), author_id: me, body, created_at: now(), asker_id: askerId ?? null };
     await d.runAsync(
-      'INSERT INTO messages (id, trip_id, author_id, body, created_at) VALUES (?, ?, ?, ?, ?)',
-      row.id, tripId, row.author_id, row.body, row.created_at
+      'INSERT INTO messages (id, trip_id, author_id, body, created_at, asker_id) VALUES (?, ?, ?, ?, ?, ?)',
+      row.id, tripId, row.author_id, row.body, row.created_at, row.asker_id
     );
     messageListeners.get(tripId)?.forEach((cb) => cb(row));
     return row;
