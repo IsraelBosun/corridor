@@ -67,6 +67,8 @@ export type TripRow = {
   contribution_naira: number | null;
   /** The regular ride this was posted from, if any. */
   plan_id: string | null;
+  /** When the car owner ended the ride, or null. */
+  ended_at: string | null;
   reservations: { rider_id: string; present_at: string | null }[];
 };
 
@@ -258,8 +260,13 @@ export interface Backend {
   /** Replaces the fields of the driver's own trip. */
   editTrip(tripId: string, fields: TripFields): Promise<void>;
   cancelTrip(tripId: string): Promise<void>;
-  /** Sets off: anyone not marked present loses their seat. */
-  departTrip(tripId: string): Promise<void>;
+  /**
+   * Sets off. On a ride home, aboard is everyone the car owner says came:
+   * they count as in the car, and anyone else loses their seat.
+   */
+  startTrip(tripId: string, aboard: string[]): Promise<void>;
+  /** Ends a ride on the way, for everyone on it. */
+  endTrip(tripId: string): Promise<void>;
 
   // Riding
   /** False when the last seat went first, or the trip is no longer open. */

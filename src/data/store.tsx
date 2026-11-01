@@ -65,6 +65,7 @@ function toTrip(row: TripRow): Trip {
     destination: place(row.destination_name, row.destination_lat, row.destination_lng),
     contributionNaira: row.contribution_naira ?? undefined,
     planId: row.plan_id ?? undefined,
+    endedAt: row.ended_at ? new Date(row.ended_at).getTime() : undefined,
   };
 }
 
@@ -176,8 +177,8 @@ type Store = {
   /** A ride that has set off and is not yet over for you, as driver or rider. */
   underway: (trip: Trip) => boolean;
   /**
-   * "I have been dropped off", the driver's "Done", or moving on from a
-   * cancelled ride: the ride is over for you.
+   * A rider closing a ride early, the car owner's End ride, or moving on
+   * from a cancelled ride: the ride is over on this phone.
    */
   finishRide: (tripId: string) => void;
 
@@ -190,7 +191,13 @@ type Store = {
   cancelTrip: (tripId: string) => Promise<void>;
   markPresent: (tripId: string, personId: string) => Promise<void>;
   markAbsent: (tripId: string, personId: string) => Promise<void>;
-  depart: (tripId: string) => Promise<void>;
+  /**
+   * Set off. On a ride home, aboard is everyone the car owner says came; the
+   * rest lose their seats.
+   */
+  depart: (tripId: string, aboard?: string[]) => Promise<void>;
+  /** End a ride on the way, for everyone on it: the car owner's one tap at the end. */
+  endRide: (tripId: string) => Promise<void>;
   /**
    * Post a ride. With weekdays, it is also a regular ride: the database posts
    * it again on each of those days, and this is today's. today false sets up
@@ -458,6 +465,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     (t: Trip) =>
       t.status === 'left' &&
       !finished.has(t.id) &&
+      // Ended by the car owner: over for everyone, whatever each phone thinks.
+      !t.endedAt &&
       // A ride nobody marked done still ends: nothing on this corridor takes
       // three hours, and an evening ride must not still be "on the way" at 1am.
       // Counted from the time it was due. A driver who sets off early is on
@@ -535,9 +544,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const cancelTrip = useCallback((tripId: string) => run(() => backend.cancelTrip(tripId), undefined), [run]);
 
-  // Not a status write. Departing also releases the seats of anyone who never
-  // showed, so the trip that sets off carries the people who are in it.
-  const depart = useCallback((tripId: string) => run(() => backend.departTrip(tripId), undefined), [run]);
+  // Not a status write. Setting off home also releases the seats of anyone the
+  // car owner left out, so the trip that sets off carries the people in it.
+  const depart = useCallback(
+    (tripId: string, aboard: string[] = []) => run(() => backend.startTrip(tripId, aboard), undefined),
+    [run]
+  );
+
+  const endRide = useCallback(
+    async (tripId: string) => {
+      await run(() => backend.endTrip(tripId), undefined);
+      finishRide(tripId);
+    },
+    [run, finishRide]
+  );
 
   const markPresent = useCallback(
     (tripId: string, personId: string) =>
@@ -614,13 +634,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       markPresent,
       markAbsent,
       depart,
+      endRide,
       postTrip,
       editTrip,
     }),
     [
       trips, ahead, loading, error, clearError, me, role, people, person,
       dropOff, dropOffName, serves, passesNear, alongRoute, routeOf, myTrip, myTripFor, myAheadFor, mySeat, mySeatFor, underway, finishRide, setDropOff, refresh, reserve, releaseSeat,
-      cancelTrip, markPresent, markAbsent, depart, postTrip, editTrip,
+      cancelTrip, markPresent, markAbsent, depart, endRide, postTrip, editTrip,
     ]
   );
 

@@ -17,7 +17,7 @@ Do not build any of this until the owner says go (decided 2026-10-17).
 
 Built on the owner's go (2026-10-21), as an OTA with migration `20261021120000_morning_rides_and_live_location.sql`. This replaces the "Find my car" plan.
 
-- Every ride has a direction: `work` (morning, 05:30 to 10:00) or `home` (evening, 16:00 to 23:00), posted the same day. One live ride per driver and one seat per rider, each way. A ride keeps its direction once posted.
+- Every ride has a direction: `work` (morning, 05:00 to 10:00 since 2026-11-01) or `home` (evening, 16:00 to 23:00). Since 2026-11-01 a one off ride can be posted up to 7 days ahead (`20261101120000_rides_ahead.sql`), one each way per Lagos day. One live ride per driver and one seat per rider, each way. A ride keeps its direction once posted.
 - Morning rides are picked up along the way: the rider's one profile place is where they are picked up in the morning and where they get off in the evening. `depart_trip()` keeps unpicked riders on a `work` ride; the driver checks them in as they get in. This fixes the old "picking up on the way" problem.
 - Live location (lib/live.ts, ui/live.tsx): from 30 minutes before departure, while Corridor is open, the driver shares until the ride is over and each rider until they are in the car. Riders see the car; the driver sees waiting riders; riders never see each other. Latest point only, in `corridor.live_positions`, read through `ride_positions()`. Anyone can pause it per ride.
 - A morning rider gets a push when their driver is within 500 m of their pickup, once per ride.
@@ -39,3 +39,15 @@ Do this in the next Android build (decided 2026-10-21).
 
 - Add Google Play's in-app update prompt (native, so it cannot ship by OTA). It lets people update from inside the app instead of going to the store.
 - Until then, old builds are nudged by an OTA screen that opens `market://details?id=com.bluehydra.corridor`.
+
+## Next native build: background location during a ride
+
+Planned 2026-11-02. Do it in the next store build (iOS and Android). An OTA cannot add it.
+
+- Why: since `20261102120000_fewer_taps.sql` the car owner's GPS does some of the tapping. A rider is checked in at the pickup of a ride home, the ride ends after 3 minutes at the destination, and banners prompt Start ride and Picked up (`ui/ride-prompt.tsx`). All of it needs the phone's position, which today is sent only while Corridor is open on screen (`watchPositionAsync` in lib/location.ts and lib/live.ts). Car owners usually drive with Google Maps in front, so most of it does not fire yet.
+- What: share location in the background only while a ride is live (30 minutes before leaving until it ends), through `expo-location` `startLocationUpdatesAsync` with `expo-task-manager`, calling `share_position()` as now. Stop the task when the ride ends or the server returns false.
+- Native setup: `expo-task-manager`; iOS `UIBackgroundModes: location` and an "Always / While using" text that says it is only during a ride; Android `ACCESS_BACKGROUND_LOCATION` with a foreground service notification ("Sharing your location with your ride"). Play Console needs the background location declaration and a short video; Apple review needs the reason in the review notes.
+- Ask for background permission only when a person starts or books their first ride, never at sign up.
+- Notifications stay as agreed: banners on screen for the car owner, pushes only when someone must know (rider to work: on the way, nearly here, arrived; car owner: one "Did you leave?" 15 minutes late). Each at most once a ride.
+- Same build: update the iOS location permission text in app.json (see above), and add the Google Maps keys if the owner has them (Maps SDK for Android and iOS; react-native-maps already uses Google on Android).
+

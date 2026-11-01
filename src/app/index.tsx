@@ -24,6 +24,7 @@ import { BottomSheet } from '@/ui/sheet';
 import { CarLine, LiveNotice, useLiveView } from '@/ui/live';
 import { PingRiders } from '@/ui/ping';
 import { RecordingNotice } from '@/ui/recording-notice';
+import { RidePrompt } from '@/ui/ride-prompt';
 import { DirectionsButton, RidesMap, TripMap, useRiderDrops } from '@/ui/trip-map';
 import { TripRow } from '@/ui/trip-row';
 
@@ -286,6 +287,7 @@ function DriverHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: Layou
           />
         }>
         <LoadError />
+        {shown && !loading ? <RidePrompt trip={shown} /> : null}
         {loading ? (
           <ActivityIndicator style={s.loading} color={color.inkFaint} />
         ) : myTrip ? (
@@ -627,7 +629,9 @@ function MyRide({ trip, now, car }: { trip: Trip; now: number; car: LivePoint | 
           </View>
         </View>
         <CarLine trip={trip} car={car} />
-        <Button label="I am in the car" kind="go" onPress={() => me && markPresent(trip.id, me.id)} />
+        <Text variant="small" tone="muted">
+          {driver.name.split(' ')[0]} marks you as picked up when you get in.
+        </Text>
         <Button
           label="Message car owner and riders"
           kind="secondary"
@@ -673,19 +677,23 @@ function MyRide({ trip, now, car }: { trip: Trip; now: number; car: LivePoint | 
         </Pressable>
 
         <Button
-          label={work ? 'I have arrived' : 'I have been dropped off'}
-          kind="go"
-          onPress={() => {
-            finishRide(trip.id);
-            router.push({ pathname: '/done/[id]', params: { id: trip.id } });
-          }}
-        />
-        <Button
           label="Message car owner and riders"
           kind="secondary"
           onPress={() => router.push({ pathname: '/chat/[id]', params: { id: trip.id } })}
         />
         <RecordingNotice />
+        {/* The car owner ends the ride for everyone. This is only for a rider dropped off early. */}
+        <Pressable
+          onPress={() => {
+            finishRide(trip.id);
+            router.push({ pathname: '/done/[id]', params: { id: trip.id } });
+          }}
+          accessibilityRole="button"
+          hitSlop={8}>
+          <Text variant="small" tone="brand" center style={s.link}>
+            Already {work ? 'at work' : 'dropped off'}? Close this ride
+          </Text>
+        </Pressable>
       </View>
     );
   }
@@ -727,9 +735,9 @@ function MyRide({ trip, now, car }: { trip: Trip; now: number; car: LivePoint | 
 
       <CarLine trip={trip} car={car} />
 
-      {/* To work, the driver collects you after setting off, and says so then. */}
+      {/* Optional: tells the car owner you are waiting. To work, you are collected on the way. */}
       {here || work ? null : (
-        <Button label={`I am at ${start}`} kind="go" onPress={() => me && markPresent(trip.id, me.id)} />
+        <Button label={`I am at ${start}`} kind="secondary" onPress={() => me && markPresent(trip.id, me.id)} />
       )}
       <Button
         label="Message car owner and riders"

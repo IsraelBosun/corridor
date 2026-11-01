@@ -143,6 +143,7 @@ function db(): Promise<SQLite.SQLiteDatabase> {
         "trips ADD COLUMN direction TEXT NOT NULL DEFAULT 'home'",
         'profiles ADD COLUMN car TEXT',
         'messages ADD COLUMN asker_id TEXT',
+        'trips ADD COLUMN ended_at TEXT',
       ]) {
         try {
           await d.execAsync(`ALTER TABLE ${col}`);
@@ -446,7 +447,7 @@ export const localBackend: Backend = {
   async listTrips(since) {
     const d = await db();
     const trips = await d.getAllAsync<Omit<TripRow, 'reservations' | 'announce_on_depart'> & { announce_on_depart: number }>(
-      'SELECT id, code, driver_id, direction, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira, NULL AS plan_id FROM trips WHERE depart_at > ? ORDER BY depart_at',
+      'SELECT id, code, driver_id, direction, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira, NULL AS plan_id, ended_at FROM trips WHERE depart_at > ? ORDER BY depart_at',
       since
     );
     const res = await d.getAllAsync<{ trip_id: string; rider_id: string; present_at: string | null }>(
@@ -544,19 +545,43 @@ export const localBackend: Backend = {
     tripsChanged();
   },
 
-  async departTrip(tripId) {
+  async startTrip(tripId, aboard) {
     const me = await requireUser();
     await ownTrip(tripId, me);
     const d = await db();
-    const trip = await d.getFirstAsync<{ direction: string }>('SELECT direction FROM trips WHERE id = ?', tripId);
+    const trip = await d.getFirstAsync<{ direction: string; status: string }>(
+      'SELECT direction, status FROM trips WHERE id = ?',
+      tripId
+    );
+    if (!trip || (trip.status !== 'posted' && trip.status !== 'boarding')) return;
     await d.withExclusiveTransactionAsync(async (tx) => {
-      // Presence is the record of who actually got in. A morning ride picks
-      // its riders up on the way, so nobody is dropped for not being in yet.
-      if (trip?.direction !== 'work') {
-        await tx.runAsync('DELETE FROM reservations WHERE trip_id = ? AND present_at IS NULL', tripId);
+      // A ride home: everyone the car owner says came is in the car, and the
+      // rest lose their seats. A morning ride picks its riders up on the way.
+      if (trip.direction !== 'work') {
+        const marks = aboard.map(() => '?').join(', ');
+        if (aboard.length > 0) {
+          await tx.runAsync(
+            `UPDATE reservations SET present_at = COALESCE(present_at, ?) WHERE trip_id = ? AND rider_id IN (${marks})`,
+            now(), tripId, ...aboard
+          );
+          await tx.runAsync(`DELETE FROM reservations WHERE trip_id = ? AND rider_id NOT IN (${marks})`, tripId, ...aboard);
+        } else {
+          await tx.runAsync('DELETE FROM reservations WHERE trip_id = ?', tripId);
+        }
       }
       await tx.runAsync("UPDATE trips SET status = 'left' WHERE id = ?", tripId);
     });
+    tripsChanged();
+  },
+
+  async endTrip(tripId) {
+    const me = await requireUser();
+    await ownTrip(tripId, me);
+    const d = await db();
+    await d.runAsync(
+      "UPDATE trips SET ended_at = ? WHERE id = ? AND status = 'left' AND ended_at IS NULL",
+      now(), tripId
+    );
     tripsChanged();
   },
 

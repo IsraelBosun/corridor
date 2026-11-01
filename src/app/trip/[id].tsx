@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useQuestions } from '@/data/chat';
@@ -163,7 +163,14 @@ export default function TripScreen() {
 
       <SafeAreaView style={s.panel} edges={['bottom', 'left', 'right']}>
         <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
-          {trip.status === 'left' ? (
+          {trip.endedAt ? (
+            <>
+              <Text variant="title">Ride finished</Text>
+              <Text variant="body" tone="muted" style={s.sub}>
+                {driver.name.split(' ')[0]} ended the ride.
+              </Text>
+            </>
+          ) : trip.status === 'left' ? (
             <>
               <Text variant="title">On the way</Text>
               <Text variant="body" tone="muted" style={s.sub}>
@@ -341,23 +348,42 @@ export default function TripScreen() {
               arrow
               onPress={() => router.replace({ pathname: '/pickup/[id]', params: { id: trip.id } })}
             />
-          ) : mine && trip.status === 'left' && work && !present ? (
-            // A morning driver on the way to collect this rider.
-            <>
-              <Button label="I am in the car" kind="go" onPress={() => me && markPresent(trip.id, me.id)} />
-              <LiveNotice trip={trip} />
-            </>
-          ) : mine && trip.status === 'left' ? (
-            // On the road: no checking in or giving the seat up now, only
-            // saying the ride is over.
+          ) : mine && trip.endedAt ? (
             <Button
-              label={work ? 'I have arrived' : 'I have been dropped off'}
-              kind="go"
+              label="Done"
               onPress={() => {
                 finishRide(trip.id);
                 router.replace({ pathname: '/done/[id]', params: { id: trip.id } });
               }}
             />
+          ) : mine && trip.status === 'left' && work && !present ? (
+            // A morning car owner on the way to collect this rider. They mark
+            // the rider picked up; nothing to tap here.
+            <>
+              <Text variant="small" tone="muted" center>
+                {driver.name.split(' ')[0]} is on the way and marks you as picked up when you get in.
+              </Text>
+              <LiveNotice trip={trip} />
+            </>
+          ) : mine && trip.status === 'left' ? (
+            // On the road. The car owner ends the ride for everyone; closing it
+            // here is only for a rider dropped off early.
+            <>
+              <Text variant="small" tone="muted" center>
+                {driver.name.split(' ')[0]} ends the ride when you arrive.
+              </Text>
+              <Pressable
+                onPress={() => {
+                  finishRide(trip.id);
+                  router.replace({ pathname: '/done/[id]', params: { id: trip.id } });
+                }}
+                accessibilityRole="button"
+                hitSlop={8}>
+                <Text variant="small" tone="brand" center style={s.bold}>
+                  Already dropped off? Close this ride
+                </Text>
+              </Pressable>
+            </>
           ) : mine ? (
             <>
               <LiveNotice trip={trip} />
@@ -379,9 +405,10 @@ export default function TripScreen() {
                   </Text>
                 </View>
               ) : (
+                // Optional: it tells the car owner this rider is waiting.
                 <Button
                   label={`I am at ${start}`}
-                  kind="go"
+                  kind="secondary"
                   onPress={() => me && markPresent(trip.id, me.id)}
                 />
               )}

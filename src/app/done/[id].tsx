@@ -11,9 +11,9 @@ import { Button, Callout, Row, Screen } from '@/ui/primitives';
 import { Text } from '@/ui/text';
 
 /**
- * Ride complete. Shown once, after "I have been dropped off", "I have
- * arrived" or the car owner's "Everyone is dropped off", so the ride ends on
- * a screen that says so instead of the home list simply coming back.
+ * Ride complete. Shown after the car owner's "End ride" (to riders, from the
+ * push it sends), or a rider closing a ride early, so the ride ends on a
+ * screen that says so instead of the home list simply coming back.
  *
  * A short summary, a way to report a problem while it is fresh, and after a
  * morning ride a nudge towards the ride home.

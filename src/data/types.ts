@@ -91,6 +91,8 @@ export type Trip = {
   contributionNaira?: number;
   /** Set when this was posted from a regular ride. Edits change this day only. */
   planId?: string;
+  /** When the car owner ended the ride, in milliseconds. It is over for everyone on it. */
+  endedAt?: number;
 };
 
 /**

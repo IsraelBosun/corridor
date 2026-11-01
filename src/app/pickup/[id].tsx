@@ -7,19 +7,20 @@ import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { clock, untilText, useNow } from '@/lib/time';
 import { color, radius, space, themed } from '@/theme/tokens';
-import { AlertIcon, ChatIcon, CheckIcon } from '@/ui/icons';
+import { ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
-import { Avatar, Button, Callout, Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
+import { Avatar, Button, Row, Screen, ScreenHeader, SectionTitle } from '@/ui/primitives';
 import { LiveNotice, riderLiveText, useLiveView } from '@/ui/live';
 import { PingRiders } from '@/ui/ping';
 import { RecordingNotice } from '@/ui/recording-notice';
+import { RidePrompt } from '@/ui/ride-prompt';
 import { Text } from '@/ui/text';
 import { DirectionsButton, TripMap, useRiderDrops, type RiderDrop } from '@/ui/trip-map';
 
 export default function PickupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { markPresent, markAbsent, depart, cancelTrip, person, loading } = useStore();
+  const { depart, cancelTrip, person, loading } = useStore();
   const trip = useTrip(id);
   const now = useNow();
   const { height } = useWindowDimensions();
@@ -28,6 +29,9 @@ export default function PickupScreen() {
   // Start and cancel each send one request. A second tap while it is out
   // would send another and show an error for a ride that already went.
   const [busy, setBusy] = useState(false);
+  // On a ride home everyone booked is ticked as coming. The car owner unticks
+  // anyone who did not come, then starts the ride: one tap, not one per rider.
+  const [leftOut, setLeftOut] = useState<Set<string>>(new Set());
 
   if (!trip) {
     return (
@@ -38,6 +42,8 @@ export default function PickupScreen() {
     );
   }
 
+  // Ended, by the car owner's tap or by arriving at the destination.
+  if (trip.endedAt) return <Ended trip={trip} />;
   if (trip.status === 'left') return <OnTheirWay trip={trip} />;
   const work = trip.direction === 'work';
 
@@ -56,21 +62,29 @@ export default function PickupScreen() {
     );
   }
 
+  // To work, nobody is waiting at the start: they are collected on the way.
+  const coming = work ? trip.riders : trip.riders.filter((r) => !leftOut.has(r));
+  const waiting = work ? [] : trip.riders.filter((r) => leftOut.has(r));
+
   async function go() {
     setBusy(true);
-    await depart(trip!.id);
+    await depart(trip!.id, coming);
     setBusy(false);
   }
 
-  const here = trip.riders.filter((r) => trip.presentAt[r]);
-  const waiting = trip.riders.filter((r) => !trip.presentAt[r]);
-  const allHere = waiting.length === 0 && here.length > 0;
-  // To work, nobody is waiting at the start: they are collected on the way.
-  const overdue = !work && now >= trip.departMin && waiting.length > 0;
+  function toggle(riderId: string) {
+    setLeftOut((prev) => {
+      const next = new Set(prev);
+      if (next.has(riderId)) next.delete(riderId);
+      else next.add(riderId);
+      return next;
+    });
+  }
+
   const firstName = (pid: string) => person(pid).name.split(' ')[0];
 
-  // Setting off with someone still on their way leaves them behind, and it
-  // cannot be undone, so it is asked first. Everyone here just goes.
+  // Leaving someone out gives their seat away, and it cannot be undone, so it
+  // is asked first. Everyone coming just goes.
   function start() {
     if (busy) return;
     // Setting off empty takes the ride off every rider's list for good, so
@@ -86,7 +100,7 @@ export default function PickupScreen() {
       );
       return;
     }
-    if (waiting.length === 0 || work) {
+    if (waiting.length === 0) {
       go();
       return;
     }
@@ -130,32 +144,20 @@ export default function PickupScreen() {
       ? 'No one has booked yet'
       : work
         ? `${trip.riders.length} to pick up on the way`
-        : allHere
-          ? 'Everyone is here'
-          : `${here.length} of ${trip.riders.length} here`;
+        : waiting.length === 0
+          ? `${trip.riders.length} riding with you`
+          : `${coming.length} of ${trip.riders.length} riding with you`;
 
   return (
     <Screen
       footer={
         <>
-          <Button
-            label={
-              overdue
-                ? waiting.length === 1
-                  ? `Leave without ${firstName(waiting[0])}`
-                  : `Leave without ${waiting.length} riders`
-                : work && trip.riders.length > 0
-                  ? 'Set off to pick them up'
-                  : 'Start trip'
-            }
-            kind={overdue ? 'primary' : 'go'}
-            onPress={start}
-            disabled={busy}
-          />
+          <Button label="Start ride" kind="go" onPress={start} disabled={busy} />
           <Button label="Cancel this ride" kind="danger" onPress={cancel} disabled={busy} />
         </>
       }>
       <ScreenHeader title="Pickup" />
+      <RidePrompt trip={trip} onPickupScreen />
 
       <Text variant="title">{headline}</Text>
       <Text variant="body" tone="muted" style={s.sub}>
@@ -178,27 +180,20 @@ export default function PickupScreen() {
       <PingRiders trip={trip} />
       <LiveNotice trip={trip} />
 
-      {overdue ? (
-        <Callout tone="stop" icon={<AlertIcon />}>
-          <Text variant="small" tone="muted">
-            It is past your time. Leaving now gives{' '}
-            {waiting.length === 1 ? `${firstName(waiting[0])}'s seat` : 'their seats'} back, so they
-            can find another ride.
-          </Text>
-        </Callout>
-      ) : null}
-
       {trip.riders.length > 0 ? (
         <>
-          <SectionTitle>Tap a rider when they get in</SectionTitle>
+          <SectionTitle>{work ? 'Riders to pick up' : 'Untick anyone who did not come'}</SectionTitle>
           {trip.riders.map((riderId, i) => {
             const p = person(riderId);
-            const at = trip.presentAt[riderId];
-            const where = at ? undefined : riderLiveText(trip, p.dropOff, live.riders[riderId]);
+            const checkedIn = trip.presentAt[riderId];
+            // To work the list is who to collect, ticked off once on the road.
+            const at = work ? undefined : leftOut.has(riderId) ? undefined : (checkedIn ?? 'coming');
+            const where = checkedIn ? undefined : riderLiveText(trip, p.dropOff, live.riders[riderId]);
             return (
               <Pressable
                 key={riderId}
-                onPress={() => (at ? markAbsent(trip.id, riderId) : markPresent(trip.id, riderId))}
+                disabled={work}
+                onPress={() => toggle(riderId)}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: !!at }}
                 style={({ pressed }) => [
@@ -212,7 +207,13 @@ export default function PickupScreen() {
                     {p.name}
                   </Text>
                   <Text variant="small" tone={at ? 'go' : 'muted'} numberOfLines={1}>
-                    {at ? `${work ? 'In the car' : 'Here'} since ${clock(at)}` : work ? 'Not picked up yet' : 'Not here yet'}
+                    {work
+                      ? 'Picked up on the way'
+                      : !at
+                        ? 'Not coming, their seat goes back'
+                        : checkedIn
+                          ? `Here since ${clock(checkedIn)}`
+                          : 'Coming'}
                     {dropFor(drops, riderId)
                       ? `, ${work ? 'picked up near' : 'gets off at'} ${dropFor(drops, riderId)}`
                       : ''}
@@ -223,7 +224,9 @@ export default function PickupScreen() {
                     </Text>
                   ) : null}
                 </View>
-                <View style={[s.check, at ? s.checkOn : null]}>{at ? <CheckIcon tint={color.onInk} /> : null}</View>
+                {work ? null : (
+                  <View style={[s.check, at ? s.checkOn : null]}>{at ? <CheckIcon tint={color.onInk} /> : null}</View>
+                )}
               </Pressable>
             );
           })}
@@ -250,6 +253,30 @@ export default function PickupScreen() {
   );
 }
 
+/** The ride is over: ended here, or on its own at the destination. */
+function Ended({ trip }: { trip: Trip }) {
+  const router = useRouter();
+  const { finishRide } = useStore();
+  return (
+    <Screen
+      footer={
+        <Button
+          label="Done"
+          onPress={() => {
+            finishRide(trip.id);
+            router.replace({ pathname: '/done/[id]', params: { id: trip.id } });
+          }}
+        />
+      }>
+      <ScreenHeader title="Ride ended" />
+      <Text variant="title">You have arrived</Text>
+      <Text variant="body" tone="muted" style={s.sub}>
+        The ride is over for everyone on it. Thanks for driving.
+      </Text>
+    </Screen>
+  );
+}
+
 /**
  * The ride is moving. The driver still needs one thing: who to drop, where,
  * in what order. The map shows the road, the list gives the order.
@@ -262,7 +289,7 @@ function OnTheirWay({ trip }: { trip: Trip }) {
 function DroppingOff({ trip }: { trip: Trip }) {
   const router = useRouter();
   const { height } = useWindowDimensions();
-  const { finishRide } = useStore();
+  const { endRide } = useStore();
 
   const aboard = trip.riders.filter((r) => trip.presentAt[r]);
   // Drop offs in the order the road reaches them, numbered the same on the
@@ -273,14 +300,15 @@ function DroppingOff({ trip }: { trip: Trip }) {
     <Screen
       footer={
         <Button
-          label="Everyone is dropped off"
-          onPress={() => {
-            finishRide(trip.id);
+          label="End ride"
+          onPress={async () => {
+            await endRide(trip.id);
             router.replace({ pathname: '/done/[id]', params: { id: trip.id } });
           }}
         />
       }>
       <ScreenHeader title="On the way" />
+      <RidePrompt trip={trip} onPickupScreen />
 
       <Text variant="title">
         {aboard.length === 0 ? 'Driving alone tonight' : `${aboard.length} on board`}
@@ -336,7 +364,7 @@ function DroppingOff({ trip }: { trip: Trip }) {
 function PickingUp({ trip }: { trip: Trip }) {
   const router = useRouter();
   const { height } = useWindowDimensions();
-  const { finishRide, person, markPresent, markAbsent } = useStore();
+  const { endRide, person, markPresent, markAbsent } = useStore();
   const live = useLiveView(trip);
 
   // Everyone booked, in pickup order. The ones still to collect are the stops.
@@ -348,11 +376,11 @@ function PickingUp({ trip }: { trip: Trip }) {
     <Screen
       footer={
         <Button
-          label={toCollect.length === 0 ? `Everyone is at ${endName(trip)}` : 'End the ride'}
+          label="End ride"
           kind={toCollect.length === 0 ? 'primary' : 'secondary'}
           onPress={() => {
-            const end = () => {
-              finishRide(trip.id);
+            const end = async () => {
+              await endRide(trip.id);
               router.replace({ pathname: '/done/[id]', params: { id: trip.id } });
             };
             if (toCollect.length === 0) return end();
@@ -371,6 +399,7 @@ function PickingUp({ trip }: { trip: Trip }) {
         />
       }>
       <ScreenHeader title="Picking up" />
+      <RidePrompt trip={trip} onPickupScreen />
 
       <Text variant="title">
         {trip.riders.length === 0
@@ -384,7 +413,7 @@ function PickingUp({ trip }: { trip: Trip }) {
           ? `Nobody is riding with you, so head straight for ${endName(trip)}. Have a good drive.`
           : toCollect.length === 0
             ? `Next stop, ${endName(trip)}. Have a good drive.`
-            : 'Tap each rider as they get in. Then on to work.'}
+            : 'Tap Picked up as each rider gets in. End the ride at work.'}
       </Text>
 
       <View style={[s.map, { height: Math.round(height * 0.42) }]}>
@@ -433,7 +462,17 @@ function PickingUp({ trip }: { trip: Trip }) {
                     </Text>
                   ) : null}
                 </View>
-                <View style={[s.check, at ? s.checkOn : null]}>{at ? <CheckIcon tint={color.onInk} /> : null}</View>
+                {at ? (
+                  <View style={[s.check, s.checkOn]}>
+                    <CheckIcon tint={color.onInk} />
+                  </View>
+                ) : (
+                  <View style={s.pickedUp}>
+                    <Text variant="small" style={s.pickedUpText}>
+                      Picked up
+                    </Text>
+                  </View>
+                )}
               </Pressable>
             );
           })}
@@ -481,6 +520,14 @@ const s = themed(() =>
     justifyContent: 'center',
   },
   checkOn: { backgroundColor: color.go, borderColor: color.go },
+  pickedUp: {
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: color.go,
+  },
+  pickedUpText: { color: color.go, fontWeight: '700' },
   open: { paddingVertical: space.md },
   map: { borderRadius: radius.xl, overflow: 'hidden', marginTop: space.sm, marginBottom: space.sm },
   // The same lime badge as the marker on the map, so 2 here is 2 there.

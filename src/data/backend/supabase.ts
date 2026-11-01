@@ -13,7 +13,7 @@ const PROFILE_COLUMNS =
 
 /** Columns, and the reservations, in one round trip. */
 const TRIP_SELECT =
-  'id, code, driver_id, direction, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira, plan_id, reservations(rider_id, present_at)';
+  'id, code, driver_id, direction, depart_at, tolerance_min, seats_total, vehicle, note, status, announce_on_depart, cancelled_at, destination_name, destination_lat, destination_lng, origin_name, origin_lat, origin_lng, contribution_naira, plan_id, ended_at, reservations(rider_id, present_at)';
 
 const PLAN_COLUMNS =
   'id, direction, weekdays, depart_time, tolerance_min, seats_total, vehicle, note, origin_name, origin_lat, origin_lng, destination_name, destination_lat, destination_lng, contribution_naira, announce_on_depart, active';
@@ -303,8 +303,12 @@ export const supabaseBackend: Backend = {
     fail(error);
   },
 
-  async departTrip(tripId) {
-    fail((await supabase.rpc('depart_trip', { p_trip: tripId })).error);
+  async startTrip(tripId, aboard) {
+    fail((await supabase.rpc('start_trip', { p_trip: tripId, p_aboard: aboard })).error);
+  },
+
+  async endTrip(tripId) {
+    fail((await supabase.rpc('end_trip', { p_trip: tripId })).error);
   },
 
   async reserveSeat(tripId) {
