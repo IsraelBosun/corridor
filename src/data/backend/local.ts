@@ -478,16 +478,17 @@ export const localBackend: Backend = {
     await needPayoutIfPaid(d, me, fields);
     const id = uuid();
     await d.withExclusiveTransactionAsync(async (tx) => {
-      // One live ride per driver each way, as the trigger does on the server.
+      // One live ride per driver each way per day, as the trigger does on the server.
       const live = await tx.getFirstAsync<{ n: number }>(
-        `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND direction = ? AND ${liveWhere()}`,
-        me, fields.direction
+        `SELECT COUNT(*) AS n FROM trips WHERE driver_id = ? AND direction = ? AND ${liveWhere()}
+           AND date(depart_at, 'localtime') = date(?, 'localtime')`,
+        me, fields.direction, fields.depart_at
       );
       if ((live?.n ?? 0) > 0) {
         throw new Error(
           fields.direction === 'work'
-            ? 'You already have a ride to work posted. Edit that one instead.'
-            : 'You already have a ride home posted. Edit that one instead.'
+            ? 'You already have a ride to work posted for that day. Edit that one instead.'
+            : 'You already have a ride home posted for that day. Edit that one instead.'
         );
       }
       await tx.runAsync(
@@ -567,22 +568,23 @@ export const localBackend: Backend = {
     const d = await db();
     let ok = false;
     await d.withExclusiveTransactionAsync(async (tx) => {
-      const trip = await tx.getFirstAsync<{ seats_total: number; status: string; driver_id: string; direction: string }>(
-        'SELECT seats_total, status, driver_id, direction FROM trips WHERE id = ?',
+      const trip = await tx.getFirstAsync<{ seats_total: number; status: string; driver_id: string; direction: string; depart_at: string }>(
+        'SELECT seats_total, status, driver_id, direction, depart_at FROM trips WHERE id = ?',
         tripId
       );
       if (!trip || (trip.status !== 'posted' && trip.status !== 'boarding') || trip.driver_id === me) return;
-      // One seat each way at a time, across the whole corridor.
+      // One seat each way per day, across the whole corridor.
       const elsewhere = await tx.getFirstAsync<{ n: number }>(
         `SELECT COUNT(*) AS n FROM reservations r JOIN trips t ON t.id = r.trip_id
-         WHERE r.rider_id = ? AND t.direction = ? AND ${liveWhere('t.')} AND t.id <> ?`,
-        me, trip.direction, tripId
+         WHERE r.rider_id = ? AND t.direction = ? AND ${liveWhere('t.')} AND t.id <> ?
+           AND date(t.depart_at, 'localtime') = date(?, 'localtime')`,
+        me, trip.direction, tripId, trip.depart_at
       );
       if ((elsewhere?.n ?? 0) > 0) {
         throw new Error(
           trip.direction === 'work'
-            ? 'You already have a seat to work. Give it up first.'
-            : 'You already have a seat home. Give it up first.'
+            ? 'You already have a seat to work that day. Give it up first.'
+            : 'You already have a seat home that day. Give it up first.'
         );
       }
       const taken = await tx.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM reservations WHERE trip_id = ?', tripId);

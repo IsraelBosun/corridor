@@ -1,10 +1,10 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { endName, seatsOpen, startName, useStore } from '@/data/store';
+import { endName, isAhead, seatsOpen, startName, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { distanceText } from '@/lib/nearby';
-import { clock, untilText, type Minutes } from '@/lib/time';
+import { clock, dayDate, untilText, type Minutes } from '@/lib/time';
 import { color, elevation, radius, space, themed } from '@/theme/tokens';
 import { ClockIcon } from './icons';
 import { Avatar, Button } from './primitives';
@@ -27,6 +27,7 @@ export function TripRow({
   dim,
   cta,
   pickupM,
+  mine,
 }: {
   trip: Trip;
   now: Minutes;
@@ -40,11 +41,14 @@ export function TripRow({
   cta?: string;
   /** Metres from the rider to where the ride starts, when known. */
   pickupM?: number;
+  /** The rider holds a seat on it. */
+  mine?: boolean;
 }) {
   const { person } = useStore();
   const driver = person(trip.driverId);
   const open = seatsOpen(trip);
-  const seats = open === 0 ? 'Full' : open === 1 ? '1 seat left' : `${open} seats left`;
+  const seats = mine ? 'Your seat' : open === 0 ? 'Full' : open === 1 ? '1 seat left' : `${open} seats left`;
+  const later = isAhead(trip);
   // Free or the flat contribution, on every card, so nobody books without knowing.
   const price = trip.contributionNaira ? naira(trip.contributionNaira) : 'Free';
   // The distance first, so a long place name never pushes it off the card.
@@ -57,7 +61,7 @@ export function TripRow({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${driver.name.split(' ')[0]}, to ${endName(trip)}. ${from}. Leaves ${clock(trip.departMin)}, give or take ${trip.toleranceMin} minutes. ${seats}. ${trip.contributionNaira ? `${price} fuel contribution` : 'Free ride'}.`}
+      accessibilityLabel={`${driver.name.split(' ')[0]}, to ${endName(trip)}. ${from}. Leaves ${later ? `${dayDate(trip.departAt)} at ` : ''}${clock(trip.departMin)}, give or take ${trip.toleranceMin} minutes. ${seats}. ${trip.contributionNaira ? `${price} fuel contribution` : 'Free ride'}.`}
       style={({ pressed }) => [s.card, dim && s.dim, pressed && s.pressed]}>
       <View style={s.top}>
         <Avatar initials={driver.initials} size={48} />
@@ -86,15 +90,15 @@ export function TripRow({
       <View style={s.strip}>
         <ClockIcon size={16} tint={color.brandInk} />
         <Text variant="small" style={[s.flex, s.bold]} numberOfLines={1}>
-          {leavesText(trip.departMin, now)}
+          {later ? dayDate(trip.departAt) : leavesText(trip.departMin, now)}
         </Text>
         <View style={s.price}>
           <Text variant="small" tone={trip.contributionNaira ? 'ink' : 'muted'} style={s.seatsText}>
             {price}
           </Text>
         </View>
-        <View style={[s.seats, open === 0 && s.seatsFull]}>
-          <Text variant="small" tone={open === 0 ? 'faint' : 'accent'} style={s.seatsText}>
+        <View style={[s.seats, open === 0 && !mine && s.seatsFull]}>
+          <Text variant="small" tone={open === 0 && !mine ? 'faint' : 'accent'} style={s.seatsText}>
             {seats}
           </Text>
         </View>

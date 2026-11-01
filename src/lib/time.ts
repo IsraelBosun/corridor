@@ -98,6 +98,55 @@ export function nowMinutes(): Minutes {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+/** How many days ahead a ride can be posted, today included. The database says the same. */
+export const DAYS_AHEAD = 7;
+
+/** Midnight at the end of today, in milliseconds: rides from then on are posted ahead. */
+export function endOfToday(nowMs = Date.now()): number {
+  const d = new Date(nowMs);
+  d.setHours(24, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Midnight at the start of the day `offset` days from today. */
+export function dayStart(offset: number): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + offset);
+  return d;
+}
+
+/** The phone's date of a moment, "2026-11-03", for telling days apart. */
+export function dayKey(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** "Today", "Tomorrow", or the weekday, which within a week says which day it is. */
+export function dayWords(ms: number): string {
+  const d = new Date(ms);
+  const today = dayStart(0).getTime();
+  const days = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() - today) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  return WEEKDAYS[d.getDay()];
+}
+
+/** "Monday 3 November". */
+export function dayDate(ms: number): string {
+  const d = new Date(ms);
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+/** "Mon 3", short enough for a tile. */
+export function dayShort(ms: number): string {
+  const d = new Date(ms);
+  return `${WEEKDAYS[d.getDay()].slice(0, 3)} ${d.getDate()}`;
+}
+
 /**
  * The clock the screens run on. The real one.
  *

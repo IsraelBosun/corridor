@@ -214,6 +214,7 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: La
         ) : (
           <Browse dir={dir} passing={passing} others={others} now={now} here={here} />
         )}
+        {loading || needsPlace ? null : <ComingUp dir={dir} now={now} />}
       </BottomSheet>
     </View>
   );
@@ -316,6 +317,7 @@ function DriverHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: Layou
             />
           </View>
         )}
+        {loading ? null : <ComingUp dir={dir} now={now} offerPost={Boolean(myTrip || onTheWay)} />}
       </BottomSheet>
     </View>
   );
@@ -452,7 +454,7 @@ function Browse({
         <Text variant="small" tone="muted" style={s.emptyBody}>
           {home
             ? 'Rides home usually start appearing from about 4 PM.'
-            : 'Rides to work are posted the same morning, from about 5:30 AM.'}{' '}
+            : 'Most rides to work are posted from about 5:00 AM.'}{' '}
           This list updates on its own.
         </Text>
       </View>
@@ -517,6 +519,57 @@ function Browse({
           ? 'Most people book close to when they stand up to leave.'
           : 'The car owner picks you up on the way, near where you set your pickup.'}
       </Text>
+    </>
+  );
+}
+
+/**
+ * Rides posted for a later day, one way. A rider sees the ones they can book,
+ * and any they hold a seat on; a car owner sees their own. Nothing shows when
+ * there are none, so the screen is as it was for anyone not planning ahead.
+ */
+function ComingUp({ dir, now, offerPost }: { dir: Direction; now: number; offerPost?: boolean }) {
+  const router = useRouter();
+  const { ahead, me, role, dropOff, serves } = useStore();
+  const { tester } = useSession();
+  const driving = role === 'driver';
+  const list = ahead.filter(
+    (t) =>
+      t.direction === dir &&
+      (driving
+        ? t.driverId === me?.id
+        : t.riders.includes(me?.id ?? '') || (bookable(t) && (tester || t.driverId !== me?.id)))
+  );
+  const open = (id: string) => router.push({ pathname: '/trip/[id]', params: { id } });
+
+  if (list.length === 0 && !offerPost) return null;
+  return (
+    <>
+      {list.length > 0 ? (
+        <>
+          <SectionTitle>Coming up</SectionTitle>
+          {list.map((t) => (
+            <TripRow
+              key={t.id}
+              trip={t}
+              now={now}
+              mine={!driving && t.riders.includes(me?.id ?? '')}
+              dim={!driving && Boolean(dropOff) && !serves(t)}
+              onPress={() => open(t.id)}
+            />
+          ))}
+        </>
+      ) : null}
+      {offerPost ? (
+        <Pressable
+          onPress={() => router.push({ pathname: '/post', params: { direction: dir } })}
+          accessibilityRole="button"
+          style={s.none}>
+          <Text variant="small" tone="brand" style={s.link}>
+            Post a ride {directionWords(dir)} for another day
+          </Text>
+        </Pressable>
+      ) : null}
     </>
   );
 }

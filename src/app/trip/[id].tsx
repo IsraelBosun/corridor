@@ -6,12 +6,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQuestions } from '@/data/chat';
 import { usePayout } from '@/data/payout';
 import { useSession } from '@/data/session';
-import { bookable, directionWords, endName, seatsOpen, startName, useStore, useTrip } from '@/data/store';
+import { bookable, directionWords, endName, isAhead, seatsOpen, startName, useStore, useTrip } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { useMyLocation } from '@/lib/location';
 import { NEAR_PICKUP_M, pickupMetres } from '@/lib/nearby';
-import { clock, untilHeading, useNow } from '@/lib/time';
+import { clock, dayDate, dayWords, untilHeading, useNow } from '@/lib/time';
 import { color, GUTTER, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, BackIcon, CarIcon, ChatIcon, CheckIcon } from '@/ui/icons';
 import { showDialog } from '@/ui/dialog';
@@ -93,6 +93,8 @@ export default function TripScreen() {
   const canBook = bookable(trip);
   const isDriver = me ? trip.driverId === me.id : false;
   const work = trip.direction === 'work';
+  // Posted for a later day: booked like any other, but nothing happens on it until then.
+  const later = isAhead(trip);
 
   async function onReserve() {
     setBusy(true);
@@ -170,7 +172,7 @@ export default function TripScreen() {
             </>
           ) : (
             <>
-              <Text variant="title">{untilHeading(trip.departMin, now)}</Text>
+              <Text variant="title">{later ? dayDate(trip.departAt) : untilHeading(trip.departMin, now)}</Text>
               <Text variant="body" tone="muted" style={s.sub}>
                 {work ? 'To work. ' : ''}Leaves {clock(trip.departMin)}, give or take {trip.toleranceMin} min
               </Text>
@@ -180,7 +182,7 @@ export default function TripScreen() {
           {mine ? <CarLine trip={trip} car={live.car} /> : null}
 
           {refusal ? (
-            <Callout tone="stop" icon={<AlertIcon />}>
+            <Callout tone="stop" icon={<AlertIcon />} flush>
               <Text variant="body" tone="stop" style={s.bold}>
                 {refusal.title}
               </Text>
@@ -242,7 +244,7 @@ export default function TripScreen() {
 
           {/* The terms, before the button that accepts them. */}
           {trip.contributionNaira ? (
-            <Callout>
+            <Callout flush>
               <Text variant="body" style={s.bold}>
                 {naira(trip.contributionNaira)} fuel contribution
               </Text>
@@ -327,7 +329,13 @@ export default function TripScreen() {
         </ScrollView>
 
         <View style={s.footer}>
-          {iAmDriving ? (
+          {iAmDriving && later ? (
+            <Button
+              label="Change this ride"
+              kind="secondary"
+              onPress={() => router.push({ pathname: '/post', params: { id: trip.id } })}
+            />
+          ) : iAmDriving ? (
             <Button
               label="Go to pickup"
               arrow
@@ -353,7 +361,13 @@ export default function TripScreen() {
           ) : mine ? (
             <>
               <LiveNotice trip={trip} />
-              {work ? (
+              {later ? (
+                <Text variant="small" tone="muted" center>
+                  {work
+                    ? `${dayWords(trip.departAt)}, ${driver.name.split(' ')[0]} picks you up on the way, near ${dropOffName}.`
+                    : `${dayWords(trip.departAt)}, check in at ${start} when you get there.`}
+                </Text>
+              ) : work ? (
                 <Text variant="small" tone="muted" center>
                   {driver.name.split(' ')[0]} picks you up on the way, near {dropOffName}.
                 </Text>

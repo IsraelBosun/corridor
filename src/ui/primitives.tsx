@@ -321,13 +321,16 @@ export function Callout({
   icon,
   children,
   tone = 'sunken',
+  flush,
 }: {
   icon?: React.ReactNode;
   children: React.ReactNode;
   tone?: 'sunken' | 'stop' | 'go';
+  /** No space below, for a container that already spaces its children (a footer, a list with gap). */
+  flush?: boolean;
 }) {
   return (
-    <Card tone={tone} style={s.callout}>
+    <Card tone={tone} style={[s.callout, !flush && s.calloutSpaced]}>
       {icon ? <View style={s.calloutIcon}>{icon}</View> : null}
       <View style={s.flex}>{children}</View>
     </Card>
@@ -474,6 +477,7 @@ export const s = themed(() =>
   disabled: { opacity: 0.35 },
   avatar: { alignItems: 'center', justifyContent: 'center' },
   callout: { flexDirection: 'row', gap: space.md, alignItems: 'flex-start' },
+  calloutSpaced: { marginBottom: space.lg },
   calloutIcon: { paddingTop: 1 },
   divider: {
     height: StyleSheet.hairlineWidth,

@@ -26,6 +26,6 @@ export function naira(amount: number): string {
 export const EVENING_START_MIN = 16 * 60;
 export const EVENING_END_MIN = 23 * 60;
 
-/** The morning, 05:30 to 10:00. Rides to work leave in here, posted the same morning. */
-export const MORNING_START_MIN = 5 * 60 + 30;
+/** The morning, 05:00 to 10:00. Rides to work leave in here. */
+export const MORNING_START_MIN = 5 * 60;
 export const MORNING_END_MIN = 10 * 60;

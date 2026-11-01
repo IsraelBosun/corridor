@@ -2,7 +2,7 @@
  * The 06:00 and 15:00 reminders, Monday to Friday.
  *
  * At 06:00 drivers are nudged to post their ride to work, and riders to look
- * for one; rides to work leave from 05:30 to 10:00 and are posted the same
+ * for one; rides to work leave from 05:00 to 10:00 and are posted the same
  * morning. At 15:00 the same for the ride home: rides start appearing from
  * about 16:00, so 15:00 lands before anyone has packed up.
  *

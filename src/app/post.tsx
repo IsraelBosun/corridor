@@ -1,11 +1,11 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { usePayout } from '@/data/payout';
 import { useOwnerPrice } from '@/data/price';
 import { daysText, usePlans } from '@/data/plans';
-import { directionNow, directionWords, useStore } from '@/data/store';
+import { directionNow, directionWords, isAhead, useStore } from '@/data/store';
 import type { Destination, Direction } from '@/data/types';
 import type { Place } from '@/lib/places';
 import {
@@ -18,7 +18,7 @@ import {
 import { loadLastOrigin, saveLastOrigin } from '@/lib/origin';
 import { hasPhone, noPhones } from '@/lib/phones';
 import { syncReminders } from '@/lib/reminders';
-import { clock, nowMinutes } from '@/lib/time';
+import { clock, DAYS_AHEAD, dayDate, dayKey, dayShort, dayStart, dayWords, nowMinutes } from '@/lib/time';
 import { color, font, LIME, PINE, radius, space, themed } from '@/theme/tokens';
 import { DayPicker } from '@/ui/day-picker';
 import { AlertIcon, CarIcon, ChevronIcon, PinIcon } from '@/ui/icons';
@@ -35,7 +35,7 @@ const SEATS = [1, 2, 3, 4] as const;
 /** The database's limit on a ride's note (trips.note). */
 const NOTE_MAX = 300;
 
-/** Leaving times a driver can pick: 05:30 to 10:00 to work, 16:00 to 23:00 home. */
+/** Leaving times a driver can pick: 05:00 to 10:00 to work, 16:00 to 23:00 home. */
 const WINDOW: Record<Direction, { earliest: number; latest: number }> = {
   work: { earliest: MORNING_START_MIN, latest: MORNING_END_MIN },
   home: { earliest: EVENING_START_MIN, latest: EVENING_END_MIN },
@@ -55,6 +55,16 @@ function firstSlot(d: Direction): number {
   return Math.min(latest, Math.max(earliest, m));
 }
 
+/** A time to start from on a later day, when there is no "now" to round up from: 7:00 AM, 5:00 PM. */
+function aheadSlot(d: Direction): number {
+  return d === 'work' ? 7 * 60 : 17 * 60;
+}
+
+/** ISO weekday of a date, 1 for Monday to 7 for Sunday, as in a weekly ride. */
+function isoDay(d: Date): number {
+  return ((d.getDay() + 6) % 7) + 1;
+}
+
 /**
  * Post a ride, or edit one: /post?id= edits that ride, /post?direction=work
  * starts a ride to work. The form is keyed by the ride, so moving from a new
@@ -67,11 +77,14 @@ export default function PostTripScreen() {
 
 function PostForm({ editId, startDirection }: { editId?: string; startDirection?: Direction }) {
   const router = useRouter();
-  const { postTrip, editTrip, cancelTrip, trips, me, role, dropOff, myTripFor, error, clearError } = useStore();
+  const { postTrip, editTrip, cancelTrip, trips, ahead, me, role, dropOff, myTripFor, myAheadFor, error, clearError } =
+    useStore();
 
   // The ride being edited, if it is still the driver's and still waiting.
   const already = editId
-    ? trips.find((t) => t.id === editId && t.driverId === me?.id && t.status !== 'cancelled' && t.status !== 'left')
+    ? [...trips, ...ahead].find(
+        (t) => t.id === editId && t.driverId === me?.id && t.status !== 'cancelled' && t.status !== 'left'
+      )
     : undefined;
 
   // A new ride goes the way the clock suggests unless the driver says
@@ -80,21 +93,29 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
     already?.direction ?? (startDirection === 'work' || startDirection === 'home' ? startDirection : directionNow(nowMinutes()))
   );
   const { latest: LATEST } = WINDOW[dir];
-  // A driver has one live ride each way, and the database enforces that.
-  // Choosing a way that already has one offers to edit it instead.
-  const existing = already ? undefined : myTripFor(dir);
+  // Which day a new ride is for: 0 is today, 1 tomorrow, up to a week ahead.
+  // Too late for today that way, it starts on tomorrow.
+  const [daysAhead, setDaysAhead] = useState(() => (!already && nowMinutes() > WINDOW[dir].latest ? 1 : 0));
+  const laterDay = !already && daysAhead > 0;
+  const day = dayStart(daysAhead);
+  // A driver has one live ride each way each day, and the database enforces
+  // that. Choosing a way and day that already has one offers to edit it instead.
+  const existing = already ? undefined : laterDay ? myAheadFor(dir, dayKey(day.getTime())) : myTripFor(dir);
   // One regular ride each way, and the database insists. With one already,
   // Repeat points to it instead of offering a second.
   const { plans } = usePlans(already ? undefined : me?.id);
   const planThatWay = plans.find((p) => p.direction === dir);
+  // A ride posted ahead on a day the weekly ride runs takes its place that day.
+  const replacesWeekly = laterDay && planThatWay?.active && planThatWay.weekdays.includes(isoDay(day));
 
   const [posting, setPosting] = useState(false);
-  const [departMin, setDepartMin] = useState(already?.departMin ?? nextSlot(dir));
+  const [departMin, setDepartMin] = useState(already?.departMin ?? (daysAhead > 0 ? aheadSlot(dir) : nextSlot(dir)));
   // Weekdays to post this ride again on, for a new ride. None is a one off.
   const [picked, setRepeat] = useState<number[]>([]);
   // A second regular ride the same way is never offered, so days picked
-  // before the first one loaded do not count.
-  const repeat = planThatWay ? [] : picked;
+  // before the first one loaded do not count. A ride for a later day is a
+  // one off: weekly rides are set up from today.
+  const repeat = planThatWay || laterDay ? [] : picked;
   const [toleranceMin, setToleranceMin] = useState<number>(already?.toleranceMin ?? 15);
   // Seats already taken cannot be taken away by an edit.
   const booked = already?.riders.length ?? 0;
@@ -103,7 +124,7 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
   // A ride cannot be moved into the past, new or edited. An edit may keep a
   // time that has already gone by, but not go further back than it.
   // After the last slot there is nothing left to post that way today.
-  const pastToday = !already && nowMinutes() > LATEST;
+  const pastToday = !already && !laterDay && nowMinutes() > LATEST;
   // Today as an ISO weekday, 1 for Monday to 7 for Sunday, as in the plan.
   const todayIso = ((new Date().getDay() + 6) % 7) + 1;
   const notToday = repeat.length > 0 && !repeat.includes(todayIso);
@@ -112,8 +133,10 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
   const planOnly = repeat.length > 0 && (pastToday || notToday);
   const tooLate = pastToday && !planOnly;
   const earliest = already
-    ? Math.min(already.departMin, firstSlot(dir))
-    : planOnly
+    ? isAhead(already)
+      ? WINDOW[dir].earliest
+      : Math.min(already.departMin, firstSlot(dir))
+    : planOnly || laterDay
       ? WINDOW[dir].earliest
       : firstSlot(dir);
   // The car comes from the driver's account, set once there. A ride posted
@@ -176,9 +199,20 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
   function switchDirection(next: Direction) {
     if (already || next === dir) return;
     setDir(next);
-    setDepartMin(nextSlot(next));
+    // Too late for today the other way too: on to tomorrow.
+    const later = daysAhead > 0 || nowMinutes() > WINDOW[next].latest;
+    if (later && daysAhead === 0) setDaysAhead(1);
+    setDepartMin(later ? aheadSlot(next) : nextSlot(next));
     setOrigin(destination);
     setDestination(origin);
+  }
+
+  /** Another day: a later one starts from a usual time, today from the next slot. */
+  function pickDay(n: number) {
+    if (n === daysAhead) return;
+    if (n === 0) setDepartMin(nextSlot(dir));
+    else if (daysAhead === 0) setDepartMin(aheadSlot(dir));
+    setDaysAhead(n);
   }
   const [searching, setSearching] = useState<'from' | 'to' | null>(null);
 
@@ -217,7 +251,9 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
     };
     // Seats people already hold survive an edit. Changing a time is an
     // update, never a second row.
-    const ok = already ? await editTrip(already.id, draft) : Boolean(await postTrip(draft, repeat, !planOnly));
+    const ok = already
+      ? await editTrip(already.id, draft)
+      : Boolean(await postTrip(draft, repeat, !planOnly, laterDay ? daysAhead : 0));
     setPosting(false);
     // The phone's own nudges skip the days a regular ride now covers.
     if (ok && repeat.length > 0) syncReminders('driver', false).catch(() => {});
@@ -273,7 +309,7 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
       footer={
         <>
           {error ? (
-            <Callout tone="stop" icon={<AlertIcon />}>
+            <Callout tone="stop" icon={<AlertIcon />} flush>
               <Text variant="small" tone="muted">
                 {error}
               </Text>
@@ -288,9 +324,7 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
                     ? 'Save changes'
                     : planOnly
                       ? 'Set up weekly ride'
-                      : home
-                        ? 'Post ride home'
-                        : 'Post ride to work'
+                      : `${home ? 'Post ride home' : 'Post ride to work'}${laterDay ? ` for ${dayWords(day.getTime())}` : ''}`
               }
               onPress={submit}
               disabled={posting || !routeReady || tooLate || needsBank || notePhone}
@@ -318,13 +352,30 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
         </Field>
       )}
 
+      {already ? null : (
+        <Field label="Which day" hint={laterDay ? `Posted once, for ${dayDate(day.getTime())}.` : undefined}>
+          <DayRow value={daysAhead} onChange={pickDay} />
+        </Field>
+      )}
+
+      {already && isAhead(already) ? (
+        <Callout>
+          <Text variant="small" tone="muted">
+            This ride is for {dayDate(already.departAt)}.
+          </Text>
+        </Callout>
+      ) : null}
+
       {existing ? (
         <Callout icon={<AlertIcon />}>
           <Text variant="small" tone="muted">
-            {existing.planId
-              ? `Your weekly ride ${directionWords(dir)} is already posted for today, leaving at ${clock(existing.departMin)}.`
-              : `You already have a ride ${directionWords(dir)} posted for ${clock(existing.departMin)}.`}{' '}
-            You can change anything for today, or cancel just today.
+            {laterDay
+              ? `You already have a ride ${directionWords(dir)} posted for ${dayWords(day.getTime())}, leaving at ${clock(existing.departMin)}. You can change it or cancel it.`
+              : `${
+                  existing.planId
+                    ? `Your weekly ride ${directionWords(dir)} is already posted for today, leaving at ${clock(existing.departMin)}.`
+                    : `You already have a ride ${directionWords(dir)} posted for ${clock(existing.departMin)}.`
+                } You can change anything for today, or cancel just today.`}
           </Text>
           <Button
             label={existing.planId ? "Edit today's ride" : 'Edit that ride'}
@@ -335,10 +386,15 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
       ) : tooLate ? (
         <Callout icon={<AlertIcon />}>
           <Text variant="small" tone="muted">
-            {home
-              ? `Rides home can leave up to ${clock(LATEST)}, so tonight is over. Come back tomorrow afternoon to post.`
-              : `Rides to work can leave up to ${clock(LATEST)}, so this morning is over. Post tomorrow morning from ${clock(MORNING_START_MIN)}, or offer a ride home.`}{' '}
-            To set up a weekly ride for the days ahead, pick them under Repeat.
+            {home ? 'Too late for a ride home tonight.' : 'Too late for a ride to work today.'} Pick another day
+            above.
+          </Text>
+        </Callout>
+      ) : replacesWeekly && planThatWay ? (
+        <Callout>
+          <Text variant="small" tone="muted">
+            This replaces your {planThatWay.time} weekly ride on {dayDate(day.getTime()).split(' ')[0]}, for that day
+            only.
           </Text>
         </Callout>
       ) : planOnly ? (
@@ -438,7 +494,7 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
             <TimePicker value={departMin} onChange={setDepartMin} earliest={earliest} latest={LATEST} />
           </Field>
 
-          {already ? null : planThatWay ? (
+          {already || laterDay ? null : planThatWay ? (
             <Field label="Repeat">
               <Pressable
                 onPress={() => router.push({ pathname: '/plan/[id]', params: { id: planThatWay.id } })}
@@ -604,10 +660,58 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
   );
 }
 
+/** Today, Tomorrow, then the next five days by name and date. Scrolls sideways. */
+function DayRow({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const days = Array.from({ length: DAYS_AHEAD }, (_, n) => n);
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dayRow}>
+      {days.map((n) => {
+        const on = n === value;
+        const ms = dayStart(n).getTime();
+        const label = n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : dayShort(ms);
+        return (
+          <Pressable
+            key={n}
+            onPress={() => onChange(n)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: on }}
+            accessibilityLabel={n < 2 ? label : dayDate(ms)}
+            style={({ pressed }) => [s.dayTile, on && s.dayTileOn, pressed && s.pressed]}>
+            <Text variant="data" tone={on ? 'ink' : 'muted'}>
+              {label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
 const s = themed(() =>
   StyleSheet.create({
   flex: { flex: 1 },
   pressed: { opacity: 0.6 },
+  dayRow: {
+    gap: space.xs,
+    padding: space.xs,
+    borderRadius: radius.lg,
+    backgroundColor: color.sunken,
+  },
+  dayTile: {
+    height: 44,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayTileOn: {
+    backgroundColor: color.surface,
+    shadowColor: color.shadow,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
   dest: {
     flexDirection: 'row',
     alignItems: 'center',

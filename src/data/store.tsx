@@ -6,7 +6,7 @@ import { placeOnRoute, type LngLat } from '@/lib/mapbox';
 import * as SecureStore from 'expo-secure-store';
 
 import { MORNING_END_MIN } from '@/lib/config';
-import { hhmm, useNow, type Minutes } from '@/lib/time';
+import { dayKey, dayStart, endOfToday, hhmm, useNow, type Minutes } from '@/lib/time';
 import { backend, type PlanFields, type TripFields, type TripRow } from './backend';
 import { toPerson, useSession } from './session';
 import type { Destination, Direction, DropOff, Person, Role, Trip } from './types';
@@ -30,11 +30,11 @@ function toMinutes(iso: string): Minutes {
 }
 
 /**
- * Minutes are assumed to mean today. Rides are posted on the day they leave,
- * the morning one in the morning and the evening one later, so they do.
+ * Minutes on a day: today unless told otherwise. A ride posted ahead, or an
+ * edit of one, passes its own day.
  */
-function toTimestamp(min: Minutes): string {
-  const d = new Date();
+function toTimestamp(min: Minutes, day: Date = new Date()): string {
+  const d = new Date(day);
   d.setHours(Math.floor(min / 60), min % 60, 0, 0);
   return d.toISOString();
 }
@@ -100,10 +100,10 @@ function place(name: string | null, lat: number | null, lng: number | null): Des
   return name && typeof lat === 'number' && typeof lng === 'number' ? { name, lat, lng } : undefined;
 }
 
-function toFields(t: TripDraft): TripFields {
+function toFields(t: TripDraft, day?: Date): TripFields {
   return {
     direction: t.direction,
-    depart_at: toTimestamp(t.departMin),
+    depart_at: toTimestamp(t.departMin, day),
     tolerance_min: t.toleranceMin,
     seats_total: t.seatsTotal,
     vehicle: t.vehicle || null,
@@ -120,7 +120,10 @@ function toFields(t: TripDraft): TripFields {
 }
 
 type Store = {
+  /** Today's rides, and last night's still within reach. Every screen reasons about these. */
   trips: Trip[];
+  /** Rides posted for a later day, soonest first. Shown under "Coming up", booked like any other. */
+  ahead: Trip[];
   /** True only on the very first load, so the map does not flash empty. */
   loading: boolean;
   /** Set when the last request failed. The screens surface it rather than lie. */
@@ -160,6 +163,8 @@ type Store = {
   myTrip: Trip | undefined;
   /** Your live ride one way: to work or home. */
   myTripFor: (direction: Direction) => Trip | undefined;
+  /** Your ride posted ahead one way, on that day ("2026-11-03"), if any. */
+  myAheadFor: (direction: Direction, day: string) => Trip | undefined;
   /**
    * The soonest ride you hold a seat on today, either way, if any. Cancelled
    * ones included, so the rider is told, and ones already on the road, until
@@ -189,9 +194,10 @@ type Store = {
   /**
    * Post a ride. With weekdays, it is also a regular ride: the database posts
    * it again on each of those days, and this is today's. today false sets up
-   * the regular ride only, when it is too late for one today.
+   * the regular ride only, when it is too late for one today. daysAhead posts
+   * a one off ride for a later day instead: 1 is tomorrow.
    */
-  postTrip: (t: TripDraft, weekdays?: number[], today?: boolean) => Promise<string | null>;
+  postTrip: (t: TripDraft, weekdays?: number[], today?: boolean, daysAhead?: number) => Promise<string | null>;
   /**
    * Change a posted ride. A driver gets one live ride each way, so a second
    * thought about the time is an edit. Reserved seats survive it.
@@ -262,7 +268,7 @@ function messageOf(e: unknown, fallback: string): string {
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const { session, me, member, tester, setDropOff: saveDropOff } = useSession();
 
-  const [trips, setTrips] = useState<Trip[]>([]);
+  const [allTrips, setTrips] = useState<Trip[]>([]);
   const [people, setPeople] = useState<Record<string, Person>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -357,7 +363,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [roads, setRoads] = useState<Record<string, LngLat[]>>({});
   useEffect(() => {
     let alive = true;
-    for (const trip of trips) {
+    for (const trip of allTrips) {
       const points = pointsOf(trip);
       if (points.length < 2 || knownRoad(points)) continue;
       roadFor(points)
@@ -371,7 +377,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [trips, pointsOf]);
+  }, [allTrips, pointsOf]);
 
   /** The road if we have it, otherwise straight lines between the points. */
   const routeOf = useCallback(
@@ -420,18 +426,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         // Nothing stored: every ride on the road still counts as on the road.
       });
   }, []);
+
+  // Today's rides and the ones posted ahead, split at midnight. Keyed on the
+  // date, so at midnight Monday's rides move across on their own.
+  const todayKey = dayKey(Date.now());
+  const trips = useMemo(() => {
+    const end = endOfToday();
+    return allTrips.filter((t) => t.departAt < end);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTrips, todayKey]);
+  const ahead = useMemo(() => {
+    const end = endOfToday();
+    return allTrips.filter((t) => t.departAt >= end && t.status !== 'cancelled');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTrips, todayKey]);
   const finishRide = useCallback(
     (tripId: string) => {
       setFinished((prev) => {
         // Only tonight's trips are worth remembering.
-        const live = new Set(trips.map((t) => t.id));
+        const live = new Set(allTrips.map((t) => t.id));
         const next = new Set([...prev].filter((id) => live.has(id)));
         next.add(tripId);
         SecureStore.setItemAsync(FINISHED_KEY, JSON.stringify([...next])).catch(() => {});
         return next;
       });
     },
-    [trips]
+    [allTrips]
   );
 
   const underway = useCallback(
@@ -457,6 +477,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const myTripFor = useCallback(
     (direction: Direction) => myTrips.find((t) => t.direction === direction),
     [myTrips]
+  );
+  const myAheadFor = useCallback(
+    (direction: Direction, day: string) =>
+      ahead.find((t) => t.driverId === me?.id && t.direction === direction && dayKey(t.departAt) === day),
+    [ahead, me]
   );
 
   const held = useMemo(
@@ -526,9 +551,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const postTrip: Store['postTrip'] = useCallback(
-    async (draft, weekdays, todayToo = true) => {
+    async (draft, weekdays, todayToo = true, daysAhead = 0) => {
       if (!me) return null;
       return run<string | null>(async () => {
+        if (daysAhead > 0) return backend.createTrip(me.id, toFields(draft, dayStart(daysAhead)));
         if (!weekdays || weekdays.length === 0) return backend.createTrip(me.id, toFields(draft));
         const planId = await backend.createPlan(me.id, toPlan(draft, weekdays));
         // Set up in the evening for the mornings ahead: nothing to post today.
@@ -548,15 +574,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const editTrip: Store['editTrip'] = useCallback(
     (tripId, draft) =>
       run(async () => {
-        await backend.editTrip(tripId, toFields(draft));
+        // An edit keeps the ride's own day; only the time moves.
+        const was = allTrips.find((t) => t.id === tripId);
+        await backend.editTrip(tripId, toFields(draft, was ? new Date(was.departAt) : undefined));
         return true;
       }, false),
-    [run]
+    [run, allTrips]
   );
 
   const value = useMemo<Store>(
     () => ({
       trips,
+      ahead,
       loading,
       error,
       clearError,
@@ -572,6 +601,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       routeOf,
       myTrip,
       myTripFor,
+      myAheadFor,
       mySeat,
       mySeatFor,
       underway,
@@ -588,8 +618,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       editTrip,
     }),
     [
-      trips, loading, error, clearError, me, role, people, person,
-      dropOff, dropOffName, serves, passesNear, alongRoute, routeOf, myTrip, myTripFor, mySeat, mySeatFor, underway, finishRide, setDropOff, refresh, reserve, releaseSeat,
+      trips, ahead, loading, error, clearError, me, role, people, person,
+      dropOff, dropOffName, serves, passesNear, alongRoute, routeOf, myTrip, myTripFor, myAheadFor, mySeat, mySeatFor, underway, finishRide, setDropOff, refresh, reserve, releaseSeat,
       cancelTrip, markPresent, markAbsent, depart, postTrip, editTrip,
     ]
   );
@@ -604,8 +634,13 @@ export function useStore(): Store {
 }
 
 export function useTrip(id: string | undefined): Trip | undefined {
-  const { trips } = useStore();
-  return trips.find((t) => t.id === id);
+  const { trips, ahead } = useStore();
+  return trips.find((t) => t.id === id) ?? ahead.find((t) => t.id === id);
+}
+
+/** Is this ride for a later day than today. */
+export function isAhead(t: Trip, nowMs = Date.now()): boolean {
+  return t.departAt >= endOfToday(nowMs);
 }
 
 /**
@@ -613,8 +648,8 @@ export function useTrip(id: string | undefined): Trip | undefined {
  * there, otherwise read on its own. For reporting a ride the next day.
  */
 export function useAnyTrip(id: string | undefined): { trip: Trip | undefined; loading: boolean } {
-  const { trips, loading: listLoading } = useStore();
-  const listed = trips.find((t) => t.id === id);
+  const { trips, ahead, loading: listLoading } = useStore();
+  const listed = trips.find((t) => t.id === id) ?? ahead.find((t) => t.id === id);
   const [fetched, setFetched] = useState<Trip | null | undefined>(undefined);
   const look = Boolean(id && !listed && !listLoading);
 

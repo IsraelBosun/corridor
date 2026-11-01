@@ -162,7 +162,7 @@ function PlanForm({
       footer={
         <>
           {error ? (
-            <Callout tone="stop" icon={<AlertIcon />}>
+            <Callout tone="stop" icon={<AlertIcon />} flush>
               <Text variant="small" tone="muted">
                 {error}
               </Text>

@@ -134,7 +134,7 @@ export default function ChatScreen() {
           style={s.flex}
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}>
-          <Callout icon={<LockIcon />}>
+          <Callout icon={<LockIcon />} flush>
             <Text variant="small" tone="muted">
               {question
                 ? `Only you and ${iAmAsking ? driverFirst : askerFirst} can read this. Phone numbers cannot be sent here.`
