@@ -141,6 +141,12 @@ export function dayDate(ms: number): string {
   return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
+/** "Mon 3 Nov", short enough for a ride card. */
+export function dayMonth(ms: number): string {
+  const d = new Date(ms);
+  return `${WEEKDAYS[d.getDay()].slice(0, 3)} ${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`;
+}
+
 /** "Mon 3", short enough for a tile. */
 export function dayShort(ms: number): string {
   const d = new Date(ms);

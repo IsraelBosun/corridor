@@ -9,7 +9,7 @@ import { useSession } from '@/data/session';
 import { bookable, directionNow, directionWords, seatsOpen, startName, useStore } from '@/data/store';
 import type { Direction, Trip } from '@/data/types';
 import type { LngLat } from '@/lib/mapbox';
-import { naira } from '@/lib/config';
+import { EVENING_END_MIN, MORNING_END_MIN, naira } from '@/lib/config';
 import { askForLocation, useLocationAccess, useMyLocation } from '@/lib/location';
 import { NEAR_PICKUP_M, pickupMetres } from '@/lib/nearby';
 import { clock, untilHeading, untilShort, useNow } from '@/lib/time';
@@ -222,10 +222,16 @@ function PassengerHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: La
 
 function DriverHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: Layout) {
   const router = useRouter();
-  const { trips, me, loading, myTripFor, underway } = useStore();
+  const { trips, ahead, me, loading, myTripFor, underway } = useStore();
   const now = useNow();
   const myTrip = myTripFor(dir);
   const home = dir === 'home';
+  // Rides already posted for later days, this way. With some, they lead and
+  // posting another is a quieter button.
+  const postedAhead = ahead.some((t) => t.driverId === me?.id && t.direction === dir);
+  // Past the last time a ride can leave today, posting is for another day.
+  const lateToday = now > (home ? EVENING_END_MIN : MORNING_END_MIN);
+  const post = () => router.push({ pathname: '/post', params: { direction: dir } });
 
   // A ride that has already set off still has one job left: the drop offs,
   // in order, or in the morning the pickups.
@@ -303,6 +309,15 @@ function DriverHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: Layou
             <DirectionsButton trip={onTheWay} drops={aboardDrops} />
             <LiveNotice trip={onTheWay} />
           </View>
+        ) : postedAhead ? (
+          <>
+            <ComingUp dir={dir} now={now} />
+            <Button
+              label={lateToday ? 'Post a ride for another day' : 'Post another ride'}
+              kind="secondary"
+              onPress={post}
+            />
+          </>
         ) : (
           <View style={s.block}>
             <Text variant="body" tone="muted">
@@ -311,13 +326,13 @@ function DriverHome({ topBar, collapsed, expanded, insetTop, dir, onDir }: Layou
                 : 'Post when you leave home and the seats you have. People along your road, going your way, can then take one.'}
             </Text>
             <Button
-              label={home ? 'Post your ride home' : 'Post your ride to work'}
-              onPress={() => router.push({ pathname: '/post', params: { direction: dir } })}
+              label={lateToday ? 'Post a ride for another day' : home ? 'Post your ride home' : 'Post your ride to work'}
+              onPress={post}
               arrow
             />
           </View>
         )}
-        {loading ? null : <ComingUp dir={dir} now={now} offerPost={Boolean(myTrip || onTheWay)} />}
+        {loading || !(myTrip || onTheWay) ? null : <ComingUp dir={dir} now={now} offerPost />}
       </BottomSheet>
     </View>
   );

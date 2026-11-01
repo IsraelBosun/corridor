@@ -4,7 +4,7 @@ import { endName, isAhead, seatsOpen, startName, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
 import { distanceText } from '@/lib/nearby';
-import { clock, dayDate, untilText, type Minutes } from '@/lib/time';
+import { clock, dayDate, dayMonth, untilText, type Minutes } from '@/lib/time';
 import { color, elevation, radius, space, themed } from '@/theme/tokens';
 import { ClockIcon } from './icons';
 import { Avatar, Button } from './primitives';
@@ -90,7 +90,7 @@ export function TripRow({
       <View style={s.strip}>
         <ClockIcon size={16} tint={color.brandInk} />
         <Text variant="small" style={[s.flex, s.bold]} numberOfLines={1}>
-          {later ? dayDate(trip.departAt) : leavesText(trip.departMin, now)}
+          {later ? dayMonth(trip.departAt) : leavesText(trip.departMin, now)}
         </Text>
         <View style={s.price}>
           <Text variant="small" tone={trip.contributionNaira ? 'ink' : 'muted'} style={s.seatsText}>
