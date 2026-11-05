@@ -188,7 +188,8 @@ type Store = {
   /** Returns false when the last seat went while the rider was deciding. */
   reserve: (tripId: string) => Promise<boolean>;
   releaseSeat: (tripId: string) => Promise<void>;
-  cancelTrip: (tripId: string) => Promise<void>;
+  /** False if it failed; the reason is in error. */
+  cancelTrip: (tripId: string) => Promise<boolean>;
   markPresent: (tripId: string, personId: string) => Promise<void>;
   markAbsent: (tripId: string, personId: string) => Promise<void>;
   /**
@@ -542,7 +543,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [me, run]
   );
 
-  const cancelTrip = useCallback((tripId: string) => run(() => backend.cancelTrip(tripId), undefined), [run]);
+  const cancelTrip = useCallback(
+    (tripId: string) =>
+      run(async () => {
+        await backend.cancelTrip(tripId);
+        return true;
+      }, false),
+    [run]
+  );
 
   // Not a status write. Setting off home also releases the seats of anyone the
   // car owner left out, so the trip that sets off carries the people in it.

@@ -195,7 +195,8 @@ function Gate({ scheme }: { scheme: string }) {
         <Stack.Protected guard={introduced}>
           <Stack.Screen name="index" />
           <Stack.Screen name="find" options={{ animation: 'slide_from_bottom' }} />
-          <Stack.Screen name="post" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          {/* Not presentation: 'modal'. On iPhone the confirm dialog (ui/dialog.tsx) cannot open over a native modal, so Cancel this ride did nothing. */}
+          <Stack.Screen name="post" options={{ animation: 'slide_from_bottom' }} />
           {/*
             Instant right after a theme switch, so the rebuilt Account page is
             simply there again in its new colours instead of sliding in.

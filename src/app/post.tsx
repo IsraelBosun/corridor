@@ -282,9 +282,10 @@ function PostForm({ editId, startDirection }: { editId?: string; startDirection?
           style: 'destructive',
           onPress: async () => {
             setPosting(true);
-            await cancelTrip(already.id);
+            const cancelled = await cancelTrip(already.id);
             setPosting(false);
-            close();
+            // On failure stay here: close() clears the error, so the owner would see nothing.
+            if (cancelled) close();
           },
         },
       ]
