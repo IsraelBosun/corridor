@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
+import { useBackgroundSharing } from '@/lib/background-sharing';
 import { ageText, setPaused, useRidePositions, usePaused, useSharingRide, type LivePoint } from '@/lib/live';
 import { metresBetween, type LngLat } from '@/lib/mapbox';
 import { distanceText } from '@/lib/nearby';
@@ -98,6 +99,7 @@ export function riderLiveText(trip: Trip, place: { lat?: number; lng?: number } 
 export function LiveNotice({ trip }: { trip: Trip }) {
   const sharing = useSharingRide();
   const off = usePaused(trip.id);
+  const background = useBackgroundSharing();
   if (!sharing || sharing.trip.id !== trip.id) return null;
   const who = sharing.driving
     ? 'Riders on this ride see where your car is'
@@ -109,7 +111,7 @@ export function LiveNotice({ trip }: { trip: Trip }) {
       <Text variant="small" tone="muted" style={s.flex}>
         {off
           ? 'Location sharing is paused for this ride.'
-          : `${who} while Corridor is open, ${until}.`}
+          : `${who}${background ? '' : ' while Corridor is open'}, ${until}.`}
       </Text>
       <Pressable
         onPress={() => setPaused(trip.id, !off)}

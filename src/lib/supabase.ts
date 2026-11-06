@@ -28,6 +28,13 @@ export const isConfigured = Boolean(URL && ANON);
  */
 const CHUNK = 1800;
 const MARKER = '__chunks__:';
+/**
+ * Readable after the first unlock since the phone started, not only while it
+ * is unlocked. Background location sends positions from a locked phone in a
+ * car, and a token refresh that could not be saved would sign the person out.
+ */
+const KEYCHAIN = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK };
+const MOVED_KEY = 'corridor.session-keychain-moved';
 
 async function readChunkCount(key: string): Promise<number> {
   const head = await SecureStore.getItemAsync(key);
@@ -55,14 +62,14 @@ const secureAdapter = {
     for (let i = 0; i < previous; i++) await SecureStore.deleteItemAsync(key + '.' + i);
 
     if (value.length <= CHUNK) {
-      await SecureStore.setItemAsync(key, value);
+      await SecureStore.setItemAsync(key, value, KEYCHAIN);
       return;
     }
     const count = Math.ceil(value.length / CHUNK);
     for (let i = 0; i < count; i++) {
-      await SecureStore.setItemAsync(key + '.' + i, value.slice(i * CHUNK, (i + 1) * CHUNK));
+      await SecureStore.setItemAsync(key + '.' + i, value.slice(i * CHUNK, (i + 1) * CHUNK), KEYCHAIN);
     }
-    await SecureStore.setItemAsync(key, MARKER + count);
+    await SecureStore.setItemAsync(key, MARKER + count, KEYCHAIN);
   },
 
   async removeItem(key: string): Promise<void> {
@@ -98,6 +105,28 @@ export const supabase = createClient(URL ?? 'https://unconfigured.invalid', ANON
     detectSessionInUrl: false,
   },
 });
+
+/**
+ * A session saved by an earlier version keeps its old setting when it is
+ * overwritten, so it has to be deleted and written again. Done once, while the
+ * app is open and the phone is unlocked, before background sharing starts.
+ * Throws if it could not be done, so sharing stays on screen only.
+ */
+export async function keepSessionReadableWhileLocked(): Promise<void> {
+  if (Platform.OS !== 'ios' || !URL) return;
+  if (await SecureStore.getItemAsync(MOVED_KEY)) return;
+  // The name Supabase gives its session: sb-<project>-auth-token.
+  const project = URL.split('//')[1].split('.')[0];
+  const key = `sb-${project}-auth-token`;
+  const count = await readChunkCount(key);
+  for (const name of [key, ...Array.from({ length: count }, (_, i) => key + '.' + i)]) {
+    const value = await SecureStore.getItemAsync(name);
+    if (value === null) continue;
+    await SecureStore.deleteItemAsync(name);
+    await SecureStore.setItemAsync(name, value, KEYCHAIN);
+  }
+  await SecureStore.setItemAsync(MOVED_KEY, '1');
+}
 
 /**
  * Supabase refreshes tokens on a timer, which a backgrounded app does not run.

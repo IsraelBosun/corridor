@@ -1,9 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { endName, startName, useAnyTrip, useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
 import { naira } from '@/lib/config';
+import { rideFinished } from '@/lib/review';
 import { clock } from '@/lib/time';
 import { color, radius, space, themed } from '@/theme/tokens';
 import { AlertIcon, CheckIcon } from '@/ui/icons';
@@ -23,6 +25,18 @@ export default function DoneScreen() {
   const router = useRouter();
   const { trip, loading } = useAnyTrip(id);
   const { me, role } = useStore();
+
+  // Only a ride that really happened: a car owner driving alone is left out.
+  const tripId = trip?.id;
+  const rode =
+    trip && me && trip.status !== 'cancelled'
+      ? trip.driverId === me.id
+        ? trip.riders.some((r) => trip.presentAt[r])
+        : Boolean(trip.presentAt[me.id])
+      : false;
+  useEffect(() => {
+    if (tripId && rode) rideFinished(tripId);
+  }, [tripId, rode]);
 
   const done = () => (router.canGoBack() ? router.back() : router.replace('/'));
 

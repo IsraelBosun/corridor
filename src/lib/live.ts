@@ -10,6 +10,9 @@
  * per person per ride and decides who may read it
  * (supabase/migrations/20261021120000_morning_rides_and_live_location.sql).
  *
+ * If the person allowed it, background-sharing.ts sends the position instead,
+ * and it carries on with Corridor off screen.
+ *
  * Anyone can pause it for a ride, which takes their point off straight away.
  * Separate from tracking.ts, the safety record of the drive itself, and from
  * location.ts, the "you are here" dot. All three share one permission.
@@ -22,6 +25,12 @@ import { AppState } from 'react-native';
 import { backend, type LivePositionRow } from '@/data/backend';
 import { useStore } from '@/data/store';
 import type { Trip } from '@/data/types';
+import {
+  offerBackgroundSharing,
+  startBackgroundSharing,
+  stopBackgroundSharing,
+  useBackgroundSharing,
+} from './background-sharing';
 import { useNow } from './time';
 
 const BEFORE_MS = 30 * 60 * 1000;
@@ -187,12 +196,33 @@ export function LiveSharer() {
   const sharing = useSharingRide();
   const foreground = useForeground();
   const tripId = sharing?.trip.id;
+  const departAt = sharing?.trip.departAt;
   const off = usePaused(tripId);
+  const background = useBackgroundSharing();
+
+  // Can only start with the app open, but keeps going once it is closed.
+  useEffect(() => {
+    if (!tripId || departAt === undefined || off) {
+      stopBackgroundSharing();
+      return;
+    }
+    if (!foreground) return;
+    offerBackgroundSharing();
+    startBackgroundSharing(tripId, departAt + AFTER_MS);
+  }, [tripId, departAt, foreground, off]);
+
+  // Signing out takes this component away.
+  useEffect(
+    () => () => {
+      stopBackgroundSharing();
+    },
+    []
+  );
 
   useEffect(() => {
-    if (!tripId || !foreground || off) return;
+    if (!tripId || !foreground || off || background) return;
     return startSharing(tripId);
-  }, [tripId, foreground, off]);
+  }, [tripId, foreground, off, background]);
 
   return null;
 }

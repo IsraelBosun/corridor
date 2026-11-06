@@ -2,7 +2,7 @@
   "expo": {
     "name": "Corridor",
     "slug": "corridor",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "corridor",
@@ -10,6 +10,7 @@
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.bluehydra.corridor",
+      "appStoreUrl": "https://apps.apple.com/app/id6823738923",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -24,6 +25,7 @@
       "predictiveBackGestureEnabled": false,
       "edgeToEdgeEnabled": true,
       "package": "com.bluehydra.corridor",
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=com.bluehydra.corridor",
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
@@ -53,14 +55,19 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Corridor shows where you are on your own map. While a ride you are on is on the road, it also records your route for safety, kept for 90 days and seen only by you and the Corridor safety team."
+          "locationWhenInUsePermission": "Corridor shows where you are on your own map and shares your location with the people on your ride. While a ride you are on is on the road, it also records your route for safety, kept for 90 days and seen only by you and the Corridor safety team.",
+          "locationAlwaysAndWhenInUsePermission": "Corridor shares your location with the people on your ride while the app is in the background, so they can see you are on the way. This runs only from 30 minutes before a ride until you are in the car or the ride is over.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "androidForegroundServiceIcon": "./assets/images/notification-icon.png"
         }
       ],
       [
         "expo-notifications",
         {
           "color": "#123B2F",
-          "icon": "./assets/images/android-icon-monochrome.png"
+          "icon": "./assets/images/notification-icon.png"
         }
       ]
     ],
