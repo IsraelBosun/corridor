@@ -20,8 +20,8 @@ import { showDialog } from '@/ui/dialog';
 
 const CHANNEL = 'rides';
 
-const STORE = 'market://details?id=com.bluehydra.corridor';
-const STORE_WEB = 'https://play.google.com/store/apps/details?id=com.bluehydra.corridor';
+export const STORE = 'market://details?id=com.bluehydra.corridor';
+export const STORE_WEB = 'https://play.google.com/store/apps/details?id=com.bluehydra.corridor';
 
 /**
  * Android builds made before Firebase was added (version code 2 and older)

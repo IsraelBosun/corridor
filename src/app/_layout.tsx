@@ -24,7 +24,7 @@ import { color, space, themed } from '@/theme/tokens';
 import { AuthLink } from '@/lib/auth-link';
 import { LiveSharer } from '@/lib/live';
 import { RideTracker } from '@/lib/tracking';
-import { OtaUpdates } from '@/lib/updates';
+import { OtaUpdates, StoreUpdates } from '@/lib/updates';
 import { DialogHost } from '@/ui/dialog';
 import { StatusBand } from '@/ui/status-band';
 import { Text } from '@/ui/text';
@@ -165,6 +165,7 @@ function Gate({ scheme }: { scheme: string }) {
     <StoreProvider>
       {introduced ? <RideTracker /> : null}
       {introduced ? <LiveSharer /> : null}
+      {introduced ? <StoreUpdates /> : null}
       {/*
         Keyed by scheme: switching light and dark rebuilds every screen from
         the new palette. The store above keeps its data, so nothing reloads.

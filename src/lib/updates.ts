@@ -11,14 +11,33 @@
  * most every half hour. A new update downloads quietly; the person is then
  * offered a restart. Saying "later" is fine: the downloaded update is used on
  * the next cold start anyway.
+ *
+ * A new store version is separate. On Android builds from 1.1.0, Google Play's
+ * own update screen (modules/play-update) offers it. Everyone else gets a
+ * dialog with a store link: set NEWEST_IN_STORE once a version is live, and
+ * publish that as an update for the old version. Neither is shown during a
+ * ride, nor more than once every 3 days.
  */
+import { requireOptionalNativeModule } from 'expo';
+import * as SecureStore from 'expo-secure-store';
 import * as Updates from 'expo-updates';
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
 
+import { useSharingRide } from '@/lib/live';
+import { STORE, STORE_WEB } from '@/lib/push';
 import { showDialog } from '@/ui/dialog';
 
 const EVERY_MS = 30 * 60 * 1000;
+
+/** The version live in each store. Null until it has been approved. */
+const NEWEST_IN_STORE: { ios: string | null; android: string | null } = { ios: null, android: null };
+const APP_STORE = 'https://apps.apple.com/app/id6823738923';
+const STORE_ASKED_KEY = 'corridor.store-update-asked';
+const STORE_ASK_EVERY_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** Only in Android builds from 1.1.0, and null in Expo Go. */
+const PlayUpdate = requireOptionalNativeModule<{ promptIfAvailable(): Promise<boolean> }>('PlayUpdate');
 
 let lastCheck = 0;
 let busy = false;
@@ -62,6 +81,62 @@ export function useOtaUpdates() {
     });
     return () => sub.remove();
   }, []);
+}
+
+/** True if version a is older than version b. */
+function older(a: string, b: string): boolean {
+  const x = a.split('.').map(Number);
+  const y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+  }
+  return false;
+}
+
+function openStore() {
+  if (Platform.OS === 'ios') Linking.openURL(APP_STORE).catch(() => {});
+  else Linking.openURL(STORE).catch(() => Linking.openURL(STORE_WEB).catch(() => {}));
+}
+
+let storeChecked = false;
+
+async function offerStoreUpdate() {
+  if (__DEV__ || !Updates.isEnabled || storeChecked) return;
+  storeChecked = true;
+  try {
+    const asked = Number(await SecureStore.getItemAsync(STORE_ASKED_KEY));
+    if (Date.now() - asked < STORE_ASK_EVERY_MS) return;
+    const stamp = () => SecureStore.setItemAsync(STORE_ASKED_KEY, String(Date.now()));
+
+    if (PlayUpdate) {
+      if (await PlayUpdate.promptIfAvailable()) await stamp();
+      return;
+    }
+    const newest = Platform.OS === 'ios' ? NEWEST_IN_STORE.ios : NEWEST_IN_STORE.android;
+    const running = Updates.runtimeVersion;
+    if (!newest || !running || !older(running, newest)) return;
+    await stamp();
+    showDialog(
+      'Update Corridor',
+      `A new version is ready. Update from the ${Platform.OS === 'ios' ? 'App Store' : 'Play Store'} to keep getting new features.`,
+      [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Update', onPress: openStore },
+      ],
+      'alert'
+    );
+  } catch {
+    // Asked again next time the app opens.
+  }
+}
+
+/** Mounted once, inside the store, so it can wait until no ride is going on. */
+export function StoreUpdates() {
+  const riding = Boolean(useSharingRide());
+  useEffect(() => {
+    if (!riding) offerStoreUpdate();
+  }, [riding]);
+  return null;
 }
 
 /** The same, as a component, for the root layout to drop in beside the dialog host. */
